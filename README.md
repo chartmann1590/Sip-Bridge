@@ -6,7 +6,7 @@ A Docker-based SIP voice bridge that connects VoIP calls to AI services for inte
 
 - **SIP Integration**: Connects to any SIP-compatible PBX on a configurable extension
 - **Speech-to-Text**: Uses Groq's Whisper API for fast, accurate transcription
-- **AI Responses**: Integrates with Free-GPT4-WEB-API for intelligent responses
+- **AI Responses**: Integrates with local Ollama instance for intelligent responses
 - **Text-to-Speech**: Uses openai-edge-tts for natural voice synthesis
 - **Web Dashboard**: Real-time monitoring and configuration interface
 - **Persistent Storage**: SQLite database for conversation history and settings
@@ -25,7 +25,7 @@ A Docker-based SIP voice bridge that connects VoIP calls to AI services for inte
          │                   │                   │
          ▼                   ▼                   ▼
     ┌─────────┐        ┌─────────┐        ┌─────────────┐
-    │ SIP PBX │        │  Groq   │        │ GPT + TTS   │
+    │ SIP PBX │        │  Groq   │        │ Ollama + TTS │
     └─────────┘        └─────────┘        └─────────────┘
 ```
 
@@ -35,7 +35,7 @@ A Docker-based SIP voice bridge that connects VoIP calls to AI services for inte
 
 - Docker and Docker Compose
 - Groq API key (for speech-to-text)
-- Running GPT service (Free-GPT4-WEB-API)
+- Running Ollama instance
 - Running TTS service (openai-edge-tts)
 
 ### Configuration
@@ -49,22 +49,23 @@ cp .env.example .env
 
 2. Configure the `.env` file:
 
-```env
 # Groq API
 GROQ_API_KEY=your_groq_api_key_here
 
 # SIP Configuration
-SIP_HOST=10.0.0.87
+SIP_HOST=your_sip_server_ip
 SIP_PORT=5060
 SIP_USERNAME=mumble-bridge
-SIP_PASSWORD=bridge123
+SIP_PASSWORD=your_sip_password
 SIP_EXTENSION=5000
 
-# GPT Service
-GPT_URL=http://10.0.0.59:1234
+# Ollama (local LLM)
+# Use host.docker.internal to access host's Ollama from Docker
+OLLAMA_URL=http://host.docker.internal:11434
+OLLAMA_MODEL=llama3.1
 
 # TTS Service (openai-edge-tts)
-TTS_URL=http://10.0.0.59:5050
+TTS_URL=http://your_tts_server_ip:5050
 TTS_API_KEY=your_api_key_here
 TTS_VOICE=en-US-GuyNeural
 
@@ -145,7 +146,7 @@ Once running, access the web dashboard at:
 ### Testing
 
 - `POST /api/test/transcribe` - Test transcription with audio file
-- `POST /api/test/gpt` - Test GPT with text
+- `POST /api/test/ollama` - Test Ollama with text
 - `POST /api/test/tts` - Test TTS synthesis
 
 ## Development
@@ -177,11 +178,11 @@ docker build -t sip-ai-bridge .
 Uses Groq's Whisper Large V3 model for transcription:
 - API Docs: https://console.groq.com/docs/api-reference#audio-transcription
 
-### Free-GPT4-WEB-API (AI Responses)
+### Ollama (AI Responses)
 
-Simple HTTP GET interface:
-- GitHub: https://github.com/aledipa/Free-GPT4-WEB-API
-- Usage: `GET http://host:port/?text=your+question`
+Local LLM integration:
+- Website: https://ollama.com
+- Usage: `POST /api/generate` or `POST /api/chat`
 
 ### openai-edge-tts (Text-to-Speech)
 
