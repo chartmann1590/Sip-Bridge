@@ -1,0 +1,542 @@
+import { useEffect, useState, useRef, useCallback } from 'react';
+import {
+  User,
+  Bot,
+  Clock,
+  Phone,
+  Trash2,
+  Download,
+  Search,
+  RefreshCw,
+  PhoneOff
+} from 'lucide-react';
+import { formatTime, formatDate, setTimezone } from '../utils/timezone';
+
+interface Message {
+  id?: number;
+  conversation_id?: number;
+  role: string;
+  content: string;
+  timestamp: string;
+  call_id?: string;
+}
+
+interface Conversation {
+  id: number;
+  call_id: string;
+  caller_id: string;
+  started_at: string;
+  answered_at?: string;
+  ended_at?: string;
+  duration_seconds: number;
+  status: string;
+  recording_url?: string;
+}
+
+interface ConversationLogProps {
+  websocket: {
+    messages: Array<{
+      conversationId: number;
+      role: string;
+      content: string;
+      callId?: string;
+      timestamp: string;
+    }>;
+    clearMessages: () => void;
+    isConnected: boolean;
+  };
+}
+
+export function ConversationLog({ websocket }: ConversationLogProps) {
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [selectedConv, setSelectedConv] = useState<Conversation | null>(null);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const [shouldAutoScroll, setShouldAutoScroll] = useState(true);
+  const lastMessageCountRef = useRef(0);
+  const [timezone, setTimezoneState] = useState<string>('UTC');
+
+  // Check if user is near bottom of scroll
+  const checkScrollPosition = useCallback(() => {
+    if (!messagesContainerRef.current) return;
+    const container = messagesContainerRef.current;
+    const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 150;
+    setShouldAutoScroll(isNearBottom);
+  }, []);
+
+  // Fetch timezone from config
+  useEffect(() => {
+    async function fetchTimezone() {
+      try {
+        const res = await fetch('/api/config');
+        const data = await res.json();
+        const tz = data.timezone || 'UTC';
+        setTimezoneState(tz);
+        setTimezone(tz);
+      } catch (err) {
+        console.error('Failed to fetch timezone:', err);
+      }
+    }
+    fetchTimezone();
+  }, []);
+
+  // Fetch conversations
+  const fetchConversations = useCallback(async () => {
+    try {
+      setRefreshing(true);
+      const res = await fetch('/api/conversations?limit=50');
+      const data = await res.json();
+      setConversations(data.conversations || []);
+    } catch (err) {
+      console.error('Failed to fetch conversations:', err);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchConversations();
+    // Refresh conversations every 5 seconds
+    const interval = setInterval(fetchConversations, 5000);
+    return () => clearInterval(interval);
+  }, [fetchConversations]);
+
+  // Update durations for active conversations
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setConversations(prev => prev.map(conv => {
+        if (conv.status === 'active' && !conv.ended_at) {
+          // Use answered_at if available, otherwise started_at
+          const startTime = conv.answered_at || conv.started_at;
+          if (startTime) {
+            const started = new Date(startTime).getTime();
+            const now = Date.now();
+            const duration = Math.max(0, Math.floor((now - started) / 1000));
+            return { ...conv, duration_seconds: duration };
+          }
+        }
+        return conv;
+      }));
+    }, 1000); // Update every second
+
+    return () => clearInterval(interval);
+  }, []);
+
+  // Auto-scroll to bottom when new messages arrive
+  useEffect(() => {
+    const currentMessageCount = selectedConv ? messages.length : websocket.messages.length;
+    if (currentMessageCount > lastMessageCountRef.current && shouldAutoScroll) {
+      setTimeout(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      }, 100);
+    }
+    lastMessageCountRef.current = currentMessageCount;
+  }, [messages.length, websocket.messages.length, shouldAutoScroll, selectedConv]);
+
+  // Listen for conversation updates via WebSocket
+  useEffect(() => {
+    if (!websocket.isConnected) {
+      console.log('WebSocket not connected, waiting...');
+      return;
+    }
+
+    // Wait for socket to be available
+    const checkSocket = setInterval(() => {
+      const socket = (window as any).socket;
+      if (socket) {
+        clearInterval(checkSocket);
+
+        const handleConversationUpdate = (data: { conversation: Conversation }) => {
+          console.log('Received conversation_update:', data);
+          const updatedConv = data.conversation;
+          setConversations(prev => {
+            const existing = prev.find(c => c.id === updatedConv.id || c.call_id === updatedConv.call_id);
+            if (existing) {
+              // Update existing conversation
+              return prev.map(c =>
+                (c.id === updatedConv.id || c.call_id === updatedConv.call_id) ? updatedConv : c
+              );
+            } else {
+              // Add new conversation at the top
+              return [updatedConv, ...prev];
+            }
+          });
+
+          // If this is the selected conversation, refresh messages
+          if (selectedConv && (selectedConv.id === updatedConv.id || selectedConv.call_id === updatedConv.call_id)) {
+            console.log('Selected conversation updated, refreshing messages');
+            fetchMessages(selectedConv.call_id);
+            // Also update the selected conversation object
+            setSelectedConv(updatedConv);
+          }
+        };
+
+        socket.on('conversation_update', handleConversationUpdate);
+        console.log('Registered conversation_update listener');
+
+        return () => {
+          socket.off('conversation_update', handleConversationUpdate);
+        };
+      }
+    }, 500);
+
+    return () => clearInterval(checkSocket);
+  }, [websocket.isConnected, selectedConv]);
+
+  // Auto-refresh messages for active conversations every 3 seconds
+  useEffect(() => {
+    if (!selectedConv || selectedConv.status !== 'active') {
+      return;
+    }
+
+    console.log('Setting up auto-refresh for active conversation:', selectedConv.call_id);
+    const interval = setInterval(() => {
+      console.log('Auto-refreshing messages for active conversation');
+      fetchMessages(selectedConv.call_id);
+    }, 3000); // Refresh every 3 seconds
+
+    return () => clearInterval(interval);
+  }, [selectedConv?.call_id, selectedConv?.status]);
+
+  // Listen for new messages and update selected conversation
+  useEffect(() => {
+    if (!selectedConv) return;
+
+    const relevantMessages = websocket.messages.filter(m =>
+      m.callId === selectedConv.call_id
+    );
+
+    if (relevantMessages.length > 0) {
+      console.log('Merging new messages for selected conversation:', relevantMessages);
+      // Merge with existing messages, avoiding duplicates
+      setMessages(prev => {
+        const existingKeys = new Set(prev.map(m => `${m.timestamp}-${m.content.slice(0, 50)}`));
+        const newMessages = relevantMessages
+          .filter(m => !existingKeys.has(`${m.timestamp}-${m.content.slice(0, 50)}`))
+          .map(m => ({
+            role: m.role,
+            content: m.content,
+            timestamp: m.timestamp,
+            call_id: m.callId,
+            conversation_id: m.conversationId,
+          }));
+
+        if (newMessages.length > 0) {
+          console.log('Adding new messages:', newMessages);
+          const combined = [...prev, ...newMessages];
+          // Sort by timestamp
+          combined.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+          return combined;
+        }
+        return prev;
+      });
+    }
+  }, [websocket.messages, selectedConv]);
+
+  async function fetchMessages(callId: string) {
+    try {
+      const res = await fetch(`/api/conversations/${callId}`);
+      const data = await res.json();
+      setMessages(data.messages || []);
+    } catch (err) {
+      console.error('Failed to fetch messages:', err);
+    }
+  }
+
+  async function selectConversation(conv: Conversation) {
+    setSelectedConv(conv);
+    await fetchMessages(conv.call_id);
+    setShouldAutoScroll(true);
+    // Scroll to bottom after loading
+    setTimeout(() => {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }, 100);
+  }
+
+  function formatDuration(seconds: number): string {
+    if (!seconds || seconds < 0) return '0:00';
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  }
+
+  function exportConversation() {
+    if (!selectedConv || messages.length === 0) return;
+
+    const text = messages.map(m =>
+      `[${formatTime(m.timestamp)}] ${m.role.toUpperCase()}: ${m.content}`
+    ).join('\n\n');
+
+    const blob = new Blob([text], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `conversation-${selectedConv.call_id.slice(0, 8)}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  const filteredConversations = conversations.filter(conv =>
+    conv.caller_id.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    conv.call_id.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  // Combine stored messages with real-time messages
+  const allMessages = selectedConv
+    ? messages
+    : websocket.messages.length > 0
+      ? websocket.messages
+        .map(m => ({
+          role: m.role,
+          content: m.content,
+          timestamp: m.timestamp,
+          call_id: m.callId,
+          conversation_id: m.conversationId,
+        }))
+        .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
+      : [];
+
+  return (
+    <div className="grid grid-cols-12 gap-4 min-h-full">
+      {/* Conversation List */}
+      <div className="col-span-4 glass rounded-xl flex flex-col">
+        <div className="p-4 border-b border-gray-700">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-lg font-semibold text-white">Conversations</h3>
+            <button
+              onClick={fetchConversations}
+              disabled={refreshing}
+              className="p-1.5 rounded-lg hover:bg-gray-700 transition-colors"
+              title="Refresh conversations"
+            >
+              <RefreshCw className={`w-4 h-4 text-gray-400 ${refreshing ? 'animate-spin' : ''}`} />
+            </button>
+          </div>
+          <div className="relative">
+            <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              placeholder="Search conversations..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-10 pr-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:border-green-500"
+            />
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-2 space-y-2" style={{ scrollbarWidth: 'thin' }}>
+          {/* Live conversation option */}
+          <button
+            onClick={() => {
+              setSelectedConv(null);
+              setShouldAutoScroll(true);
+            }}
+            className={`w-full text-left p-3 rounded-lg transition-colors ${selectedConv === null
+              ? 'bg-green-500/20 border border-green-500/30'
+              : 'bg-gray-800/50 hover:bg-gray-800 border border-transparent'
+              }`}
+          >
+            <div className="flex items-center gap-2 mb-1">
+              <div className="w-2 h-2 rounded-full bg-green-400 status-dot" />
+              <span className="font-medium text-green-400">Live Feed</span>
+            </div>
+            <p className="text-xs text-gray-400">
+              Real-time messages from active calls
+            </p>
+          </button>
+
+          {loading ? (
+            <p className="text-center text-gray-500 py-8">Loading...</p>
+          ) : filteredConversations.length === 0 ? (
+            <p className="text-center text-gray-500 py-8">No conversations found</p>
+          ) : (
+            filteredConversations.map((conv) => (
+              <button
+                key={conv.id}
+                onClick={() => selectConversation(conv)}
+                className={`w-full text-left p-3 rounded-lg transition-colors ${selectedConv?.id === conv.id
+                  ? 'bg-blue-500/20 border border-blue-500/30'
+                  : 'bg-gray-800/50 hover:bg-gray-800 border border-transparent'
+                  }`}
+              >
+                <div className="flex items-center justify-between mb-1">
+                  <span className="font-medium text-gray-200 truncate">
+                    {conv.caller_id || 'Unknown Caller'}
+                  </span>
+                  <span className={`text-xs px-2 py-0.5 rounded-full flex-shrink-0 ${conv.status === 'completed' ? 'bg-green-500/20 text-green-400' :
+                    conv.status === 'active' ? 'bg-blue-500/20 text-blue-400' :
+                      'bg-red-500/20 text-red-400'
+                    }`}>
+                    {conv.status}
+                  </span>
+                </div>
+                <div className="flex items-center gap-3 text-xs text-gray-400">
+                  <span className="flex items-center gap-1">
+                    <Clock className="w-3 h-3" />
+                    {formatDuration(conv.duration_seconds)}
+                  </span>
+                  <span className="truncate">{formatDate(conv.started_at, timezone)}</span>
+                </div>
+              </button>
+            ))
+          )}
+        </div>
+      </div>
+
+      {/* Message View */}
+      <div className="col-span-8 glass rounded-xl flex flex-col">
+        <div className="p-4 border-b border-gray-700 flex items-center justify-between">
+          <div>
+            <h3 className="text-lg font-semibold text-white">
+              {selectedConv ? `Call: ${selectedConv.call_id.slice(0, 8)}...` : 'Live Messages'}
+            </h3>
+            {selectedConv && (
+              <p className="text-sm text-gray-400">
+                From: {selectedConv.caller_id} • Duration: {formatDuration(selectedConv.duration_seconds)}
+                {selectedConv.status === 'active' && ' (active)'}
+                {selectedConv.answered_at && (
+                  <span className="ml-2 text-xs text-gray-500">
+                    • Answered: {formatTime(selectedConv.answered_at, timezone)}
+                  </span>
+                )}
+              </p>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            {selectedConv && (
+              <>
+                <button
+                  onClick={() => fetchMessages(selectedConv.call_id)}
+                  className="flex items-center gap-2 px-3 py-2 rounded-lg bg-gray-700 hover:bg-gray-600 text-sm text-gray-200 transition-colors"
+                  title="Refresh messages"
+                >
+                  <RefreshCw className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={exportConversation}
+                  className="flex items-center gap-2 px-3 py-2 rounded-lg bg-gray-700 hover:bg-gray-600 text-sm text-gray-200 transition-colors"
+                >
+                  <Download className="w-4 h-4" />
+                  Export
+                </button>
+              </>
+            )}
+            {!selectedConv && (
+              <button
+                onClick={websocket.clearMessages}
+                className="flex items-center gap-2 px-3 py-2 rounded-lg bg-gray-700 hover:bg-gray-600 text-sm text-gray-200 transition-colors"
+              >
+                <Trash2 className="w-4 h-4" />
+                Clear
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Active Call Controls */}
+        {selectedConv && selectedConv.status === 'active' && (
+          <div className="px-4 py-2 border-b border-gray-700 bg-gray-800/30 flex justify-end">
+            <button
+              onClick={async () => {
+                try {
+                  await fetch('/api/sip/hangup', { method: 'POST' });
+                  // Status update will come via websocket
+                } catch (err) {
+                  console.error('Failed to hangup:', err);
+                }
+              }}
+              className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-red-500/20 hover:bg-red-500/30 text-red-400 text-sm transition-colors"
+            >
+              <PhoneOff className="w-4 h-4" />
+              End Call
+            </button>
+          </div>
+        )}
+
+        {/* Recording Player */}
+        {selectedConv && selectedConv.recording_url && (
+          <div className="px-4 py-2 border-b border-gray-700 bg-gray-800/30">
+            <p className="text-xs text-gray-400 mb-1">Call Recording</p>
+            <audio
+              controls
+              src={`/api${selectedConv.recording_url}`}
+              className="w-full h-8"
+              style={{ borderRadius: '0.5rem' }}
+            />
+          </div>
+        )}
+
+        <div
+          ref={messagesContainerRef}
+          onScroll={checkScrollPosition}
+          className="flex-1 overflow-y-auto p-4 space-y-4"
+          style={{
+            scrollbarWidth: 'thin',
+            scrollBehavior: 'smooth',
+            overscrollBehavior: 'contain'
+          }}
+        >
+          {allMessages.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-full text-gray-500">
+              <Phone className="w-12 h-12 mb-4 opacity-50" />
+              <p>No messages yet</p>
+              <p className="text-sm">Messages will appear here during calls</p>
+            </div>
+          ) : (
+            <>
+              {allMessages.map((msg, index) => {
+                const msgKey = ('id' in msg && msg.id) ? msg.id : `${msg.timestamp}-${index}-${msg.content.slice(0, 20)}`;
+
+                // Handle system messages (call answered, user hung up)
+                if (msg.role === 'system') {
+                  return (
+                    <div key={msgKey} className="flex justify-center my-2">
+                      <div className="bg-gray-700/50 border border-gray-600 rounded-lg px-4 py-2">
+                        <p className="text-xs text-gray-400 text-center">
+                          <Clock className="w-3 h-3 inline mr-1" />
+                          {msg.content} • {formatTime(msg.timestamp, timezone)}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                }
+
+                return (
+                  <div
+                    key={msgKey}
+                    className={`flex gap-3 log-entry ${msg.role === 'assistant' ? '' : 'flex-row-reverse'
+                      }`}
+                  >
+                    <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${msg.role === 'assistant' ? 'bg-green-500/20' : 'bg-blue-500/20'
+                      }`}>
+                      {msg.role === 'assistant' ? (
+                        <Bot className="w-4 h-4 text-green-400" />
+                      ) : (
+                        <User className="w-4 h-4 text-blue-400" />
+                      )}
+                    </div>
+                    <div className={`max-w-[70%] ${msg.role === 'assistant' ? '' : 'text-right'}`}>
+                      <div className={`rounded-2xl px-4 py-2 ${msg.role === 'assistant' ? 'message-assistant' : 'message-user'
+                        }`}>
+                        <p className="text-sm text-white whitespace-pre-wrap break-words">{msg.content}</p>
+                      </div>
+                      <p className="text-xs text-gray-500 mt-1 px-2">
+                        {formatTime(msg.timestamp, timezone)}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })}
+              <div ref={messagesEndRef} />
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
