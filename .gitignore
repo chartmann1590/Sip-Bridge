@@ -41,8 +41,7 @@ frontend/dist/
 *.log
 
 # Database
-data/*.db
-data/*.db-journal
+data/
 
 # OS
 .DS_Store
@@ -50,5 +49,11 @@ Thumbs.db
 
 # Docker
 .docker/
+
+# AI Assistant
+CLAUDE.md
+
+# Logs
+logs/
 
 
