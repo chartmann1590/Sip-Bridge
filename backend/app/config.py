@@ -14,7 +14,9 @@ class Config:
     # Groq API (for speech-to-text)
     GROQ_API_KEY: str = os.getenv('GROQ_API_KEY', '')
     GROQ_API_URL: str = 'https://api.groq.com/openai/v1/audio/transcriptions'
-    GROQ_MODEL: str = 'whisper-large-v3'
+    GROQ_MODEL: str = os.getenv('GROQ_MODEL', 'whisper-large-v3')
+    # Groq LLM (for text generation fallback)
+    GROQ_LLM_MODEL: str = os.getenv('GROQ_LLM_MODEL', 'llama-3.1-8b-instant')
     
     # SIP Configuration
     SIP_HOST: str = os.getenv('SIP_HOST', '10.0.0.87')

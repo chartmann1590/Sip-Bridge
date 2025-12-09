@@ -52,16 +52,28 @@ class WebSocketManager:
             })
     
     def broadcast_message(self, conversation_id: int, role: str, content: str,
-                          call_id: Optional[str] = None) -> None:
+                          call_id: Optional[str] = None,
+                          calendar_refs: Optional[list] = None,
+                          email_refs: Optional[list] = None,
+                          model: Optional[str] = None) -> None:
         """Broadcast a new message to all connected clients."""
         if self.socketio:
-            self.socketio.emit('new_message', {
+            message_data = {
                 'conversation_id': conversation_id,
                 'role': role,
                 'content': content,
                 'call_id': call_id,
+                'model': model,
                 'timestamp': datetime.utcnow().isoformat()
-            })
+            }
+
+            # Include references if provided
+            if calendar_refs:
+                message_data['calendar_refs'] = calendar_refs
+            if email_refs:
+                message_data['email_refs'] = email_refs
+
+            self.socketio.emit('new_message', message_data)
     
     def broadcast_conversation_update(self, conversation: Dict[str, Any]) -> None:
         """Broadcast conversation update (new conversation, status change, duration update)."""

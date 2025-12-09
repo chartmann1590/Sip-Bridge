@@ -28,7 +28,8 @@ from .calendar_client import calendar_client
 from .email_client import email_client
 
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
+import pytz
 
 import logging
 logger = logging.getLogger(__name__)
@@ -813,6 +814,101 @@ class CallSession:
 
         logger.info("RTP receive loop stopped")
         self.stop()
+
+    def _build_system_context(self, user_text: str) -> tuple[list, list, list]:
+        """
+        Build system prompt and context for LLM.
+        Returns: (messages, calendar_event_ids, email_ids)
+        """
+        messages = []
+        calendar_event_ids = []
+        email_ids = []
+        
+        # Base Persona
+        persona = Config.BOT_PERSONA
+        
+        # 1. Unconditionally inject current date/time
+        try:
+            user_tz = pytz.timezone(Config.TIMEZONE)
+            current_time = datetime.now(user_tz)
+            datetime_str = current_time.strftime("%A, %B %d, %Y at %I:%M %p %Z")
+            current_date_str = current_time.strftime("%A, %B %d, %Y")
+            tomorrow_date = current_time + timedelta(days=1)
+            tomorrow_date_str = tomorrow_date.strftime("%A, %B %d, %Y")
+            persona = f"{persona}\n\nCurrent date and time: {datetime_str}"
+            persona += f"\n\nIMPORTANT - Date interpretation (all dates are in {Config.TIMEZONE} timezone):"
+            persona += f"\n- 'Today' refers to {current_date_str}"
+            persona += f"\n- 'Tomorrow' refers to {tomorrow_date_str}"
+            persona += f"\n- When the user asks about 'tomorrow', they mean events on {tomorrow_date_str}, NOT today"
+            persona += f"\n- Always interpret relative dates (today, tomorrow, etc.) based on the current date shown above"
+            logger.info(f"Injected current date/time: {datetime_str}")
+        except Exception as e:
+            logger.warning(f"Could not inject date/time: {e}")
+            # Fallback to UTC if timezone is invalid
+            current_time = datetime.now(timezone.utc)
+            current_date_str = current_time.strftime("%A, %B %d, %Y")
+            tomorrow_date = current_time + timedelta(days=1)
+            tomorrow_date_str = tomorrow_date.strftime("%A, %B %d, %Y")
+            persona = f"{persona}\n\nCurrent date and time: {current_time.strftime('%A, %B %d, %Y at %I:%M %p UTC')}"
+            persona += f"\n\nIMPORTANT - Date interpretation (all dates are in UTC timezone):"
+            persona += f"\n- 'Today' refers to {current_date_str}"
+            persona += f"\n- 'Tomorrow' refers to {tomorrow_date_str}"
+            persona += f"\n- When the user asks about 'tomorrow', they mean events on {tomorrow_date_str}, NOT today"
+            persona += f"\n- Always interpret relative dates (today, tomorrow, etc.) based on the current date shown above"
+
+        # 2. Add email context (on-demand)
+        email_keywords = ['email', 'e-mail', 'mail', 'inbox', 'message']
+        is_asking_about_email = any(keyword in user_text.lower() for keyword in email_keywords)
+
+        if is_asking_about_email and Config.EMAIL_ADDRESS and Config.EMAIL_APP_PASSWORD:
+            try:
+                email_client.set_credentials(
+                    Config.EMAIL_ADDRESS,
+                    Config.EMAIL_APP_PASSWORD,
+                    Config.EMAIL_IMAP_SERVER,
+                    Config.EMAIL_IMAP_PORT
+                )
+                unread_emails, error = email_client.fetch_unread_emails(limit=3)
+                if not error and unread_emails:
+                    email_info, e_ids = email_client.format_emails_for_llm_with_refs(unread_emails)
+                    persona = f"{persona}\n\n{email_info}"
+                    email_ids = e_ids
+                    logger.info(f"Added {len(unread_emails)} unread emails to context")
+                elif not error and unread_emails is not None:
+                    persona = f"{persona}\n\nYou have no unread emails."
+            except Exception as e:
+                logger.warning(f"Could not fetch emails: {e}")
+
+        # 3. Add calendar context
+        if Config.CALENDAR_URL:
+            try:
+                calendar_client.set_calendar_url(Config.CALENDAR_URL)
+                # Fetch next 30 days of events
+                upcoming_events = calendar_client.get_upcoming_events(days=30, limit=20, user_timezone=Config.TIMEZONE)
+                
+                if upcoming_events:
+                    calendar_info, c_ids = calendar_client.format_events_for_llm_with_refs(upcoming_events, Config.TIMEZONE)
+                    persona = f"{persona}\n\nYou have access to the user's calendar. {calendar_info}"
+                    calendar_event_ids = c_ids
+                    logger.info(f"Added {len(upcoming_events)} calendar events to context")
+            except Exception as e:
+                logger.warning(f"Could not fetch calendar events: {e}")
+
+        # 4. Add marker instructions if needed
+        if calendar_event_ids or email_ids:
+            persona += """
+
+IMPORTANT: When referring to specific calendar events or emails, use these markers:
+- For calendar events: [CALENDAR:0], [CALENDAR:1], etc. (matching the indices shown above)
+- For emails: [EMAIL:0], [EMAIL:1], etc. (matching the indices shown above)
+
+Example: "You have a meeting tomorrow [CALENDAR:0] and an email from John [EMAIL:0]."
+
+Only use markers for events/emails explicitly listed above. Do not hallucinate markers."""
+
+        messages.append({'role': 'system', 'content': persona})
+        
+        return messages, calendar_event_ids, email_ids
     
     def _process_utterance(self, chunks_8k: list) -> None:
         """Process recorded audio through AI pipeline."""
@@ -906,60 +1002,8 @@ class CallSession:
             thinking_thread.start()
 
             try:
-                # Get conversation history for context (use last 10 messages)
-                conversation_messages = []
-
-                # Add system message with bot persona
-                persona = Config.BOT_PERSONA
-
-                # Check if user is asking about emails (on-demand only)
-                email_keywords = ['email', 'e-mail', 'mail', 'inbox', 'message']
-                is_asking_about_email = any(keyword in text.lower() for keyword in email_keywords)
-
-                # Add email context if user asks about emails AND credentials are configured
-                if is_asking_about_email and Config.EMAIL_ADDRESS and Config.EMAIL_APP_PASSWORD:
-                    try:
-                        # Update email client credentials
-                        email_client.set_credentials(
-                            Config.EMAIL_ADDRESS,
-                            Config.EMAIL_APP_PASSWORD,
-                            Config.EMAIL_IMAP_SERVER,
-                            Config.EMAIL_IMAP_PORT
-                        )
-
-                        # Fetch unread emails
-                        unread_emails, error = email_client.fetch_unread_emails(limit=3)
-
-                        if not error and unread_emails:
-                            email_info = email_client.format_emails_for_llm(unread_emails)
-                            persona = f"{persona}\n\n{email_info}"
-                            logger.info(f"Added {len(unread_emails)} unread emails to context")
-                        elif not error and unread_emails is not None:
-                            persona = f"{persona}\n\nYou have no unread emails in your inbox."
-                            logger.info("No unread emails found")
-                    except Exception as e:
-                        logger.warning(f"Could not fetch emails: {e}")
-
-                # Add calendar context if calendar URL is configured
-                if Config.CALENDAR_URL:
-                    try:
-                        # Update calendar client URL
-                        calendar_client.set_calendar_url(Config.CALENDAR_URL)
-
-                        # Get upcoming events (next 30 days)
-                        upcoming_events = calendar_client.get_upcoming_events(days=30, limit=20)
-
-                        if upcoming_events:
-                            calendar_info = calendar_client.format_events_for_llm(upcoming_events, Config.TIMEZONE)
-                            persona = f"{persona}\n\nYou have access to the user's calendar. {calendar_info}"
-                            logger.info(f"Added {len(upcoming_events)} calendar events to context")
-                    except Exception as e:
-                        logger.warning(f"Could not fetch calendar events: {e}")
-
-                conversation_messages.append({
-                    'role': 'system',
-                    'content': persona
-                })
+                # Build system context with unconditional date/time
+                conversation_messages, calendar_event_ids, email_ids = self._build_system_context(text)
 
                 if self.call_state and self.call_state.conversation_id:
                     messages = db.get_messages(self.call_state.conversation_id)
@@ -972,7 +1016,7 @@ class CallSession:
                         })
 
                 # Get Ollama response using chat endpoint with history
-                response, error = gpt_client.get_chat_response_sync(conversation_messages, call_id)
+                response, error, model = gpt_client.get_chat_response_sync(conversation_messages, call_id)
 
                 if error or not response:
                     response = "I'm sorry, I couldn't process that request."
@@ -982,12 +1026,59 @@ class CallSession:
                 # Stop thinking sound
                 self.stop_thinking = True
                 thinking_thread.join(timeout=1.0)
-            
-            # Save assistant message
+
+            # Save assistant message and parse markers for references
             if self.call_state and self.call_state.conversation_id:
-                db.add_message(self.call_state.conversation_id, 'assistant', response)
+                # Save message first to get message_id
+                saved_message = db.add_message(self.call_state.conversation_id, 'assistant', response, model=model)
+
+                # Parse AI response for markers and create reference records
+                if saved_message and (calendar_event_ids or email_ids):
+                    try:
+                        # Extract calendar markers [CALENDAR:N]
+                        calendar_markers = re.findall(r'\[CALENDAR:(\d+)\]', response)
+                        for marker_index_str in calendar_markers:
+                            marker_index = int(marker_index_str)
+                            if marker_index < len(calendar_event_ids):
+                                db.add_calendar_ref(
+                                    saved_message.id,
+                                    calendar_event_ids[marker_index],
+                                    marker_index
+                                )
+                                logger.info(f"Created calendar reference: message={saved_message.id}, event={calendar_event_ids[marker_index]}, index={marker_index}")
+                            else:
+                                logger.warning(f"AI used invalid calendar marker index: {marker_index} (max: {len(calendar_event_ids) - 1})")
+
+                        # Extract email markers [EMAIL:N]
+                        email_markers = re.findall(r'\[EMAIL:(\d+)\]', response)
+                        for marker_index_str in email_markers:
+                            marker_index = int(marker_index_str)
+                            if marker_index < len(email_ids):
+                                db.add_email_ref(
+                                    saved_message.id,
+                                    email_ids[marker_index],
+                                    marker_index
+                                )
+                                logger.info(f"Created email reference: message={saved_message.id}, email={email_ids[marker_index]}, index={marker_index}")
+                            else:
+                                logger.warning(f"AI used invalid email marker index: {marker_index} (max: {len(email_ids) - 1})")
+                    except Exception as e:
+                        logger.error(f"Error creating message references: {e}", exc_info=True)
+
+                # Fetch full message with refs for broadcasting
+                calendar_refs_data = None
+                email_refs_data = None
+                if saved_message and (calendar_event_ids or email_ids):
+                    full_message = db.get_message_with_refs(saved_message.id)
+                    if full_message:
+                        calendar_refs_data = full_message.get('calendar_refs', [])
+                        email_refs_data = full_message.get('email_refs', [])
+
                 ws_manager.broadcast_message(
-                    self.call_state.conversation_id, 'assistant', response, call_id
+                    self.call_state.conversation_id, 'assistant', response, call_id,
+                    calendar_refs=calendar_refs_data,
+                    email_refs=email_refs_data,
+                    model=model
                 )
             
             # Generate and play TTS
@@ -1323,11 +1414,11 @@ class SIPClient:
         ws_manager.broadcast_message(conv.id, 'user', message, call_id)
         
         # Get response
-        response, error = gpt_client.get_response_sync(message, call_id)
+        response, error, model = gpt_client.get_response_sync(message, call_id)
         
         if response:
-            db.add_message(conv.id, 'assistant', response)
-            ws_manager.broadcast_message(conv.id, 'assistant', response, call_id)
+            db.add_message(conv.id, 'assistant', response, model=model)
+            ws_manager.broadcast_message(conv.id, 'assistant', response, call_id, model=model)
         
         # End conversation
         db.end_conversation(call_id)
@@ -1336,5 +1427,6 @@ class SIPClient:
             'call_id': call_id,
             'user_message': message,
             'assistant_response': response,
-            'error': error
+            'error': error,
+            'model': model
         }

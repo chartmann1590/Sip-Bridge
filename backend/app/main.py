@@ -1,6 +1,9 @@
-"""Main Flask application for SIP AI Bridge."""
-import eventlet
-eventlet.monkey_patch()
+import gevent.monkey
+gevent.monkey.patch_all()
+
+# Force IPv4 to fix DNS timeouts (still helpful for gevent)
+from . import patch_dns
+patch_dns.apply()
 
 import os
 import threading
@@ -32,6 +35,9 @@ logging.basicConfig(
     ]
 )
 
+# Reduce geventwebsocket logging noise during calls
+logging.getLogger('geventwebsocket.handler').setLevel(logging.WARNING)
+
 logger = logging.getLogger(__name__)
 
 # Create Flask app
@@ -41,8 +47,8 @@ app.config['SECRET_KEY'] = os.urandom(24).hex()
 # Enable CORS
 CORS(app, resources={r"/api/*": {"origins": "*"}})
 
-# Initialize SocketIO
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
+# Initialize SocketIO with gevent (better DNS handling than eventlet)
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode='gevent')
 ws_manager.init_app(socketio)
 
 # SIP client instance (will be initialized after import)
@@ -96,10 +102,16 @@ def serve_static(path):
 def health_check():
     """Health check endpoint."""
     # Check calendar health only if URL is configured
-    calendar_healthy = None
+    # Don't fail health check if calendar has issues (optional service)
+    calendar_healthy = 'not_configured'
     if Config.CALENDAR_URL:
         calendar_client.set_calendar_url(Config.CALENDAR_URL)
-        calendar_healthy = calendar_client.check_health()
+        try:
+            # Quick check with timeout protection
+            calendar_healthy = calendar_client.check_health()
+        except Exception as e:
+            logger.warning(f"Calendar health check failed: {e}")
+            calendar_healthy = False
 
     services = {
         'api': True,
@@ -108,14 +120,17 @@ def health_check():
         'ollama': gpt_client.check_health(),
         'tts': tts_client.check_health(),
         'sip': sip_client.is_registered if sip_client else False,
-        'calendar': calendar_healthy if calendar_healthy is not None else 'not_configured',
+        'calendar': calendar_healthy,
     }
 
-    all_healthy = all(v is True or v == 'not_configured' for v in services.values())
+    # Don't count calendar as critical for overall health
+    critical_services = {k: v for k, v in services.items() if k != 'calendar'}
+    all_healthy = all(v is True or v == 'not_configured' for v in critical_services.values())
+
     return jsonify({
         'status': 'healthy' if all_healthy else 'degraded',
         'services': services,
-    }), 200 if all_healthy else 503
+    })
 
 
 @app.route('/api/status', methods=['GET'])
@@ -188,7 +203,7 @@ def test_calendar():
         return jsonify({'error': error}), 500
 
     # Get upcoming events (next 30 days)
-    upcoming_events = calendar_client.get_upcoming_events(days=30, limit=20)
+    upcoming_events = calendar_client.get_upcoming_events(days=30, limit=20, user_timezone=Config.TIMEZONE)
 
     return jsonify({
         'status': 'success',
@@ -211,7 +226,7 @@ def get_calendar_events():
     calendar_client.set_calendar_url(Config.CALENDAR_URL)
 
     # Get upcoming events
-    upcoming_events = calendar_client.get_upcoming_events(days=days, limit=limit)
+    upcoming_events = calendar_client.get_upcoming_events(days=days, limit=limit, user_timezone=Config.TIMEZONE)
 
     return jsonify({
         'events': [event.to_dict() for event in upcoming_events],
@@ -357,11 +372,12 @@ def get_conversation(call_id):
     conv = db.get_conversation_by_call_id(call_id)
     if not conv:
         return jsonify({'error': 'Conversation not found'}), 404
-    
-    messages = db.get_messages(conv.id)
+
+    # Get messages with calendar/email references
+    messages = db.get_messages_with_refs(conv.id)
     return jsonify({
         'conversation': conv.to_dict(),
-        'messages': [m.to_dict() for m in messages],
+        'messages': messages,
     })
 
 
@@ -371,6 +387,33 @@ def get_recent_messages():
     limit = request.args.get('limit', 100, type=int)
     messages = db.get_recent_messages(limit=limit)
     return jsonify({'messages': messages})
+
+
+@app.route('/api/messages/<int:message_id>', methods=['GET'])
+def get_message_with_refs(message_id):
+    """Get a specific message with its calendar and email references."""
+    message = db.get_message_with_refs(message_id)
+    if not message:
+        return jsonify({'error': 'Message not found'}), 404
+    return jsonify(message)
+
+
+@app.route('/api/calendar/events/<int:event_id>', methods=['GET'])
+def get_calendar_event(event_id):
+    """Get full calendar event details by ID."""
+    event = db.get_calendar_event(event_id)
+    if not event:
+        return jsonify({'error': 'Calendar event not found'}), 404
+    return jsonify(event)
+
+
+@app.route('/api/emails/<int:email_id>', methods=['GET'])
+def get_email_message(email_id):
+    """Get full email message details by ID."""
+    email = db.get_email_message(email_id)
+    if not email:
+        return jsonify({'error': 'Email not found'}), 404
+    return jsonify(email)
 
 
 # =====================
@@ -415,13 +458,13 @@ def test_ollama():
     if not data or 'text' not in data:
         return jsonify({'error': 'No text provided'}), 400
     
-    response, error = gpt_client.get_response_sync(data['text'])
+    response, error, model = gpt_client.get_response_sync(data['text'])
     if error:
         return jsonify({'error': error}), 500
     
     return jsonify({
         'response': response,
-        'model': Config.OLLAMA_MODEL,
+        'model': model,
     })
 
 
@@ -490,7 +533,7 @@ Keep it concise but detailed (2-3 paragraphs max). Write in second person ("You 
 
 Enhanced persona:"""
 
-    response, error = gpt_client.get_response_sync(prompt)
+    response, error, _ = gpt_client.get_response_sync(prompt)
     if error or not response:
         return jsonify({'error': 'Failed to generate persona'}), 500
 

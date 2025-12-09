@@ -100,209 +100,239 @@ class OllamaClient:
             logger.error(error)
             return False, error
     
-    async def get_response(self, text: str, call_id: Optional[str] = None) -> Tuple[Optional[str], Optional[str]]:
+    def _get_ollama_response(self, text: str, call_id: Optional[str] = None) -> Tuple[Optional[str], Optional[str]]:
+        """Internal method to get response from Ollama."""
+        try:
+            with httpx.Client(timeout=30.0) as client:
+                response = client.post(
+                    f"{self.base_url}/api/generate",
+                    json={
+                        "model": self.model,
+                        "prompt": text,
+                        "stream": False,
+                        "options": {
+                            "temperature": 0.7,
+                            "num_predict": 256,
+                        }
+                    }
+                )
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    return data.get('response', '').strip(), None
+                else:
+                    return None, f"Ollama Error: {response.status_code}"
+        except Exception as e:
+            return None, str(e)
+
+    def _get_groq_response(self, text: str, call_id: Optional[str] = None) -> Tuple[Optional[str], Optional[str]]:
+        """Internal method to get response from Groq."""
+        if not Config.GROQ_API_KEY:
+            return None, "No Groq API key configured"
+            
+        try:
+            headers = {
+                "Authorization": f"Bearer {Config.GROQ_API_KEY}",
+                "Content-Type": "application/json"
+            }
+            
+            # Using configured Groq LLM model
+            model = Config.GROQ_LLM_MODEL 
+            
+            with httpx.Client(timeout=30.0) as client:
+                response = client.post(
+                    "https://api.groq.com/openai/v1/chat/completions",
+                    headers=headers,
+                    json={
+                        "model": model,
+                        "messages": [{"role": "user", "content": text}],
+                        "temperature": 0.7,
+                        "max_completion_tokens": 256
+                    }
+                )
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    choices = data.get('choices', [])
+                    if choices:
+                        return choices[0].get('message', {}).get('content', '').strip(), None
+                    return None, "Empty response from Groq"
+                else:
+                    return None, f"Groq Error: {response.status_code} - {response.text}"
+        except Exception as e:
+            return None, str(e)
+
+    async def get_response(self, text: str, call_id: Optional[str] = None) -> Tuple[Optional[str], Optional[str], str]:
         """
-        Get a response from Ollama.
-        
-        Args:
-            text: The input text/question
-            call_id: Optional call ID for logging
-        
-        Returns:
-            Tuple of (response_text, error_message)
+        Get a response from LLM with fallback (Async).
+        Returns: (response_text, error_message, model_used)
         """
         if not text:
-            return None, "Empty input text"
+            return None, "Empty input text", "none"
         
+        # 1. Try Ollama (Async)
         try:
-            db.add_log('info', 'ollama_request', f'Model: {self.model}, Prompt: {text[:100]}...', call_id)
-            
-            async with httpx.AsyncClient(timeout=120.0) as client:
+            db.add_log('info', 'llm_request_ollama', f'Prompt: {text[:50]}...', call_id)
+            async with httpx.AsyncClient(timeout=30.0) as client:
                 response = await client.post(
                     f"{self.base_url}/api/generate",
                     json={
                         "model": self.model,
                         "prompt": text,
                         "stream": False,
-                        "options": {
-                            "temperature": 0.7,
-                            "num_predict": 256,  # Limit response length for voice
-                        }
+                        "options": {"temperature": 0.7, "num_predict": 256}
                     }
                 )
-                
                 if response.status_code == 200:
                     data = response.json()
-                    response_text = data.get('response', '').strip()
-                    
-                    if response_text:
-                        db.add_log('info', 'ollama_response', f'Received: {response_text[:100]}...', call_id)
-                        return response_text, None
+                    res_text = data.get('response', '').strip()
+                    if res_text:
+                        return res_text, None, f"Ollama ({self.model})"
                     else:
-                        return None, "Empty response from Ollama"
+                        raise Exception("Empty response")
                 else:
-                    error = f"Ollama API error: {response.status_code} - {response.text}"
-                    db.add_log('error', 'ollama_failed', error, call_id)
-                    return None, error
-        
-        except httpx.TimeoutException:
-            error = "Ollama request timed out"
-            db.add_log('error', 'ollama_failed', error, call_id)
-            return None, error
-        except httpx.ConnectError:
-            error = f"Cannot connect to Ollama at {self.base_url}"
-            db.add_log('error', 'ollama_failed', error, call_id)
-            return None, error
+                    raise Exception(f"Status {response.status_code}")
+                    
         except Exception as e:
-            error = f"Ollama error: {str(e)}"
-            db.add_log('error', 'ollama_failed', error, call_id)
-            return None, error
-    
-    def get_response_sync(self, text: str, call_id: Optional[str] = None) -> Tuple[Optional[str], Optional[str]]:
+            logger.warning(f"Ollama async failed: {e}. Trying Groq fallback.")
+
+        # 2. Try Groq (Async logic, but reusing sync method for now as it's a fallback)
+        # Ideally should use async http here too, but for quick fix:
+        try:
+            return await asyncio.to_thread(self.get_response_sync, text, call_id)
+        except Exception as e:
+            return None, f"All providers failed. {e}", "none"
+
+    def get_response_sync(self, text: str, call_id: Optional[str] = None) -> Tuple[Optional[str], Optional[str], str]:
         """
-        Synchronous version of get_response.
-
-        Args:
-            text: The input text/question
-            call_id: Optional call ID for logging
-
-        Returns:
-            Tuple of (response_text, error_message)
+        Synchronous version of get_response with fallback to Groq.
+        Returns: (response_text, error_message, model_used)
         """
         if not text:
-            return None, "Empty input text"
+            return None, "Empty input text", "none"
 
+        # 1. Try Ollama
         try:
-            db.add_log('info', 'ollama_request', f'Model: {self.model}, Prompt: {text[:100]}...', call_id)
-            logger.info(f"Sending to Ollama ({self.model}): {text[:100]}...")
-
-            with httpx.Client(timeout=120.0) as client:
-                response = client.post(
-                    f"{self.base_url}/api/generate",
-                    json={
-                        "model": self.model,
-                        "prompt": text,
-                        "stream": False,
-                        "options": {
-                            "temperature": 0.7,
-                            "num_predict": 256,  # Limit response length for voice
-                        }
-                    }
-                )
-
-                if response.status_code == 200:
-                    data = response.json()
-                    response_text = data.get('response', '').strip()
-
-                    if response_text:
-                        logger.info(f"Ollama response: {response_text[:100]}...")
-                        db.add_log('info', 'ollama_response', f'Received: {response_text[:100]}...', call_id)
-                        return response_text, None
-                    else:
-                        return None, "Empty response from Ollama"
-                else:
-                    error = f"Ollama API error: {response.status_code} - {response.text}"
-                    logger.error(error)
-                    db.add_log('error', 'ollama_failed', error, call_id)
-                    return None, error
-
-        except httpx.TimeoutException:
-            error = "Ollama request timed out"
-            logger.error(error)
-            db.add_log('error', 'ollama_failed', error, call_id)
-            return None, error
-        except httpx.ConnectError:
-            error = f"Cannot connect to Ollama at {self.base_url}"
-            logger.error(error)
-            db.add_log('error', 'ollama_failed', error, call_id)
-            return None, error
+            db.add_log('info', 'llm_request', f'Trying Ollama ({self.model})...', call_id)
+            logger.info(f"Sending to Ollama ({self.model})...")
+            
+            response, error = self._get_ollama_response(text, call_id)
+            if response:
+                db.add_log('info', 'llm_response', f'Ollama response: {response[:50]}...', call_id)
+                return response, None, f"Ollama ({self.model})"
+            
+            logger.warning(f"Ollama failed: {error}. Failing over to Groq...")
         except Exception as e:
-            error = f"Ollama error: {str(e)}"
-            logger.error(error)
-            db.add_log('error', 'ollama_failed', error, call_id)
-            return None, error
-
-    def get_chat_response_sync(self, messages: list, call_id: Optional[str] = None) -> Tuple[Optional[str], Optional[str]]:
-        """
-        Get response using Ollama chat endpoint with conversation history.
-
-        Args:
-            messages: List of message dicts with 'role' and 'content'
-            call_id: Optional call ID for logging
-
-        Returns:
-            Tuple of (response_text, error_message)
-        """
-        if not messages:
-            return None, "No messages provided"
-
+            logger.error(f"Ollama exception: {e}")
+        
+        # 2. Fallback to Groq
         try:
-            logger.info(f"Sending chat to Ollama ({self.model}) with {len(messages)} messages")
+            db.add_log('info', 'llm_fallback', 'Trying Groq fallback...', call_id)
+            response, error = self._get_groq_response(text, call_id)
+            if response:
+                db.add_log('info', 'llm_response_groq', f'Groq response: {response[:50]}...', call_id)
+                return response, None, f"Groq ({Config.GROQ_LLM_MODEL})"
+            
+            logger.error(f"Groq failed: {error}")
+            return None, f"All providers failed. Ollama: {error}", "none"
+        except Exception as e:
+            logger.error(f"Groq exception: {e}")
+            return None, f"All providers failed with exception: {e}", "none"
 
-            with httpx.Client(timeout=120.0) as client:
+    def _get_ollama_chat_response(self, messages: list, call_id: Optional[str] = None) -> Tuple[Optional[str], Optional[str]]:
+        """Internal method to get chat response from Ollama."""
+        try:
+            with httpx.Client(timeout=30.0) as client:
                 response = client.post(
                     f"{self.base_url}/api/chat",
                     json={
                         "model": self.model,
                         "messages": messages,
                         "stream": False,
-                        "options": {
-                            "temperature": 0.7,
-                            "num_predict": 256,  # Limit response length for voice
-                        }
+                        "options": {"temperature": 0.7, "num_predict": 256}
                     }
                 )
-
                 if response.status_code == 200:
                     data = response.json()
-                    message = data.get('message', {})
-                    response_text = message.get('content', '').strip()
-
-                    if response_text:
-                        logger.info(f"Ollama chat response: {response_text[:100]}...")
-                        db.add_log('info', 'ollama_response', f'Received: {response_text[:100]}...', call_id)
-                        return response_text, None
-                    else:
-                        return None, "Empty response from Ollama"
+                    return data.get('message', {}).get('content', '').strip(), None
                 else:
-                    error = f"Ollama API error: {response.status_code} - {response.text}"
-                    logger.error(error)
-                    db.add_log('error', 'ollama_failed', error, call_id)
-                    return None, error
-
-        except httpx.TimeoutException:
-            error = "Ollama request timed out"
-            logger.error(error)
-            db.add_log('error', 'ollama_failed', error, call_id)
-            return None, error
-        except httpx.ConnectError:
-            error = f"Cannot connect to Ollama at {self.base_url}"
-            logger.error(error)
-            db.add_log('error', 'ollama_failed', error, call_id)
-            return None, error
+                    return None, f"Ollama Error: {response.status_code}"
         except Exception as e:
-            error = f"Ollama error: {str(e)}"
-            logger.error(error)
-            db.add_log('error', 'ollama_failed', error, call_id)
-            return None, error
-    
+            return None, str(e)
+
+    def _get_groq_chat_response(self, messages: list, call_id: Optional[str] = None) -> Tuple[Optional[str], Optional[str]]:
+        """Internal method to get chat response from Groq."""
+        if not Config.GROQ_API_KEY:
+            return None, "No Groq API key configured"
+        try:
+            headers = {
+                "Authorization": f"Bearer {Config.GROQ_API_KEY}",
+                "Content-Type": "application/json"
+            }
+            model = Config.GROQ_LLM_MODEL
+            with httpx.Client(timeout=30.0) as client:
+                response = client.post(
+                    "https://api.groq.com/openai/v1/chat/completions",
+                    headers=headers,
+                    json={
+                        "model": model,
+                        "messages": messages,
+                        "temperature": 0.7,
+                        "max_completion_tokens": 256
+                    }
+                )
+                if response.status_code == 200:
+                    data = response.json()
+                    choices = data.get('choices', [])
+                    if choices:
+                        return choices[0].get('message', {}).get('content', '').strip(), None
+                    return None, "Empty response from Groq"
+                else:
+                    return None, f"Groq Error: {response.status_code} - {response.text}"
+        except Exception as e:
+            return None, str(e)
+
+    def get_chat_response_sync(self, messages: list, call_id: Optional[str] = None) -> Tuple[Optional[str], Optional[str], str]:
+        """
+        Get response using chat endpoint with fallback.
+        Returns: (response_text, error_message, model_used)
+        """
+        if not messages:
+            return None, "No messages provided", "none"
+
+        # 1. Try Ollama
+        try:
+            db.add_log('info', 'llm_chat_request', f'Trying Ollama ({self.model})...', call_id)
+            response, error = self._get_ollama_chat_response(messages, call_id)
+            if response:
+                return response, None, f"Ollama ({self.model})"
+            logger.warning(f"Ollama chat failed: {error}. Failing over to Groq...")
+        except Exception as e:
+            logger.error(f"Ollama chat exception: {e}")
+
+        # 2. Fallback to Groq
+        try:
+            db.add_log('info', 'llm_chat_fallback', 'Trying Groq fallback...', call_id)
+            # Check if messages need any format adjustment? 
+            # Both standard format is {role:..., content:...}, mostly compatible.
+            response, error = self._get_groq_chat_response(messages, call_id)
+            if response:
+                return response, None, f"Groq ({Config.GROQ_LLM_MODEL})"
+            return None, f"All providers failed. Ollama: {error}", "none"
+        except Exception as e:
+            logger.error(f"Groq chat exception: {e}")
+            return None, f"All providers failed with exception: {e}", "none"
+
     def check_health(self) -> bool:
-        """Check if Ollama is accessible and responding."""
+        """Check if Ollama is accessible."""
+        # We only check Ollama health for now as it's the primary
         try:
             with httpx.Client(timeout=5.0) as client:
-                # Ollama root endpoint returns version info
                 response = client.get(self.base_url)
-                if response.status_code == 200:
-                    logger.debug("Ollama health check passed")
-                    return True
-                
-                # Also try the tags endpoint
-                response = client.get(f"{self.base_url}/api/tags")
                 return response.status_code == 200
-        except Exception as e:
-            logger.debug(f"Ollama health check failed: {e}")
+        except:
             return False
 
 
-# Global client instance (keeping name for compatibility)
+# Global client instance
 gpt_client = OllamaClient()

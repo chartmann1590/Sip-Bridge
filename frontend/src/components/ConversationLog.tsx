@@ -13,6 +13,38 @@ import {
   ChevronRight
 } from 'lucide-react';
 import { formatTime, formatDate, setTimezone } from '../utils/timezone';
+import { CalendarCard } from './CalendarCard';
+import { EmailCard } from './EmailCard';
+import { EventModal } from './EventModal';
+import { EmailModal } from './EmailModal';
+import { Message as WSMessage } from '../hooks/useWebSocket';
+
+interface CalendarRef {
+  ref_index: number;
+  event: {
+    id: number;
+    event_uid: string;
+    summary: string;
+    start_time: string;
+    end_time: string;
+    description?: string;
+    location?: string;
+    attendees?: Array<{ email: string; name: string; status: string }>;
+    is_all_day: boolean;
+  };
+}
+
+interface EmailRef {
+  ref_index: number;
+  email: {
+    id: number;
+    message_id: string;
+    subject: string;
+    sender: string;
+    date: string;
+    body: string;
+  };
+}
 
 interface Message {
   id?: number;
@@ -21,6 +53,9 @@ interface Message {
   content: string;
   timestamp: string;
   call_id?: string;
+  calendar_refs?: CalendarRef[];
+  email_refs?: EmailRef[];
+  model?: string;
 }
 
 interface Conversation {
@@ -37,13 +72,7 @@ interface Conversation {
 
 interface ConversationLogProps {
   websocket: {
-    messages: Array<{
-      conversationId: number;
-      role: string;
-      content: string;
-      callId?: string;
-      timestamp: string;
-    }>;
+    messages: WSMessage[];
     clearMessages: () => void;
     isConnected: boolean;
   };
@@ -59,6 +88,10 @@ export function ConversationLog({ websocket }: ConversationLogProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const [timezone, setTimezoneState] = useState<string>('UTC');
+
+  // Modal state for calendar/email cards
+  const [selectedEvent, setSelectedEvent] = useState<CalendarRef['event'] | null>(null);
+  const [selectedEmail, setSelectedEmail] = useState<EmailRef['email'] | null>(null);
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
@@ -212,6 +245,9 @@ export function ConversationLog({ websocket }: ConversationLogProps) {
             timestamp: m.timestamp,
             call_id: m.callId,
             conversation_id: m.conversationId,
+            model: m.model,
+            calendar_refs: m.calendar_refs,
+            email_refs: m.email_refs,
           }));
 
         if (newMessages.length > 0) {
@@ -250,6 +286,61 @@ export function ConversationLog({ websocket }: ConversationLogProps) {
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
     return `${mins}:${secs.toString().padStart(2, '0')}`;
+  }
+
+  // Clean message content by removing markers
+  function cleanMessageContent(content: string): string {
+    return content.replace(/(\[CALENDAR:(\d+)\]|\[EMAIL:(\d+)\])/g, '').trim();
+  }
+
+  // Extract attachments from message content
+  function extractAttachments(
+    content: string,
+    calendarRefs: CalendarRef[] = [],
+    emailRefs: EmailRef[] = []
+  ): React.ReactNode[] {
+    const attachments: React.ReactNode[] = [];
+    const markerRegex = /(\[CALENDAR:(\d+)\]|\[EMAIL:(\d+)\])/g;
+    let match;
+
+    while ((match = markerRegex.exec(content)) !== null) {
+      const calendarIndex = match[2];
+      const emailIndex = match[3];
+
+      if (calendarIndex !== undefined) {
+        // Calendar marker
+        const idx = parseInt(calendarIndex, 10);
+        const ref = calendarRefs.find(r => r.ref_index === idx);
+
+        if (ref) {
+          attachments.push(
+            <CalendarCard
+              key={`calendar-${idx}-${match.index}`}
+              event={ref.event}
+              timezone={timezone}
+              onClick={() => setSelectedEvent(ref.event)}
+            />
+          );
+        }
+      } else if (emailIndex !== undefined) {
+        // Email marker
+        const idx = parseInt(emailIndex, 10);
+        const ref = emailRefs.find(r => r.ref_index === idx);
+
+        if (ref) {
+          attachments.push(
+            <EmailCard
+              key={`email-${idx}-${match.index}`}
+              email={ref.email}
+              timezone={timezone}
+              onClick={() => setSelectedEmail(ref.email)}
+            />
+          );
+        }
+      }
+    }
+
+    return attachments;
   }
 
   function exportConversation() {
@@ -295,6 +386,9 @@ export function ConversationLog({ websocket }: ConversationLogProps) {
           timestamp: m.timestamp,
           call_id: m.callId,
           conversation_id: m.conversationId,
+          model: m.model,
+          calendar_refs: m.calendar_refs,
+          email_refs: m.email_refs,
         }))
         .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
       : [];
@@ -548,8 +642,27 @@ export function ConversationLog({ websocket }: ConversationLogProps) {
                     <div className={`max-w-[70%] ${msg.role === 'assistant' ? '' : 'text-right'}`}>
                       <div className={`rounded-2xl px-4 py-2 ${msg.role === 'assistant' ? 'message-assistant' : 'message-user'
                         }`}>
-                        <p className="text-sm text-white whitespace-pre-wrap break-words">{msg.content}</p>
+                        {/* Message Content */}
+                        <div className="text-sm prose prose-sm max-w-none text-gray-100">
+                          <p className="whitespace-pre-wrap">{cleanMessageContent(msg.content)}</p>
+                        </div>
+
+                        {/* Model Name */}
+                        {msg.role === 'assistant' && msg.model && (
+                          <div className="mt-1 text-xs text-gray-400 flex items-center gap-1">
+                            <div className="w-1.5 h-1.5 rounded-full bg-blue-400/50"></div>
+                            {msg.model}
+                          </div>
+                        )}
                       </div>
+
+                      {/* Render attachments below the bubble */}
+                      {(msg.calendar_refs?.length || msg.email_refs?.length) ? (
+                        <div className={`mt-2 flex flex-wrap gap-2 ${msg.role === 'assistant' ? 'justify-start' : 'justify-end'}`}>
+                          {extractAttachments(msg.content, msg.calendar_refs, msg.email_refs)}
+                        </div>
+                      ) : null}
+
                       <p className="text-xs text-gray-500 mt-1 px-2">
                         {formatTime(msg.timestamp, timezone)}
                       </p>
@@ -562,6 +675,23 @@ export function ConversationLog({ websocket }: ConversationLogProps) {
           )}
         </div>
       </div>
+
+      {/* Modals for calendar events and emails */}
+      {selectedEvent && (
+        <EventModal
+          event={selectedEvent}
+          timezone={timezone}
+          onClose={() => setSelectedEvent(null)}
+        />
+      )}
+
+      {selectedEmail && (
+        <EmailModal
+          email={selectedEmail}
+          timezone={timezone}
+          onClose={() => setSelectedEmail(null)}
+        />
+      )}
     </div>
   );
 }

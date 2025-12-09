@@ -53,8 +53,8 @@ class GroqTranscriber:
             headers = {
                 'Authorization': f'Bearer {self.api_key}',
             }
-            
-            async with httpx.AsyncClient(timeout=30.0) as client:
+
+            async with httpx.AsyncClient(timeout=60.0) as client:
                 response = await client.post(
                     self.api_url,
                     headers=headers,
@@ -116,8 +116,8 @@ class GroqTranscriber:
             headers = {
                 'Authorization': f'Bearer {self.api_key}',
             }
-            
-            with httpx.Client(timeout=30.0) as client:
+
+            with httpx.Client(timeout=60.0) as client:
                 response = client.post(
                     self.api_url,
                     headers=headers,
@@ -154,5 +154,6 @@ class GroqTranscriber:
 
 # Global transcriber instance
 transcriber = GroqTranscriber()
+
 
 

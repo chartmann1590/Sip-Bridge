@@ -10,7 +10,10 @@ A Docker-based SIP voice bridge that connects VoIP calls to AI services for inte
 - **Text-to-Speech**: Uses openai-edge-tts for natural voice synthesis
 - **Web Dashboard**: Real-time monitoring and configuration interface
 - **Persistent Storage**: SQLite database for conversation history and settings
-- **Email Notifications**: Automated email alerts for logs and events
+- **Calendar Integration**: Access and query your calendar events during calls
+- **Email Integration**: Check your inbox on-demand during calls via IMAP
+- **Conversation History**: Browse and export past conversations
+- **Real-time Updates**: WebSocket-based live updates during calls
 
 ## Architecture
 
@@ -75,6 +78,22 @@ TTS_VOICE=en-US-GuyNeural
 # Set the timezone for date and time displays throughout the application
 # Examples: America/New_York, Europe/London, Asia/Tokyo, etc.
 TIMEZONE=UTC
+
+# Calendar Integration (optional)
+# iCalendar (.ics) feed URL for calendar access
+# Get from Google Calendar, Outlook, or other calendar services
+CALENDAR_URL=https://api.calendar.com/feed.ics
+
+# Email Integration (optional, IMAP)
+# For checking emails during calls
+EMAIL_ADDRESS=your.email@gmail.com
+EMAIL_APP_PASSWORD=your_app_password_here
+EMAIL_IMAP_SERVER=imap.gmail.com
+EMAIL_IMAP_PORT=993
+
+# Bot Persona (optional)
+# Customize the AI's personality and response style
+BOT_PERSONA=You are a friendly AI assistant on a phone call. Keep your responses short, conversational, and to the point.
 ```
 
 ### Running with Docker Compose
@@ -94,7 +113,7 @@ docker-compose down
 
 Once running, access the web dashboard at:
 
-- **Web UI**: http://localhost:3000
+- **Web UI**: http://localhost:3002
 - **API**: http://localhost:5001
 
 ## Web Interface
@@ -109,17 +128,35 @@ Once running, access the web dashboard at:
 ### Conversations
 
 - Live message feed during calls
-- Historical conversation browser
+- Historical conversation browser with pagination
 - Export conversations to text files
 - Search and filter capabilities
+- Real-time message updates via WebSocket
+
+### Calendar
+
+- View upcoming events from your calendar
+- Ask the AI about your schedule during calls
+- Automatic context injection for calendar-aware responses
+- Support for Google Calendar, Outlook, iCloud, and other iCalendar feeds
+
+### Email
+
+- Check unread emails on-demand during calls
+- Gmail App Password support
+- IMAP integration for multiple email providers
+- Privacy-focused: emails are not permanently stored
 
 ### Settings
 
 - SIP server configuration
-- API keys management
+- API keys management (Groq, TTS)
 - Voice selection for TTS
 - Service endpoint configuration
 - Timezone configuration (can be set in UI or .env file)
+- Calendar URL configuration
+- Email IMAP settings
+- Bot persona customization
 
 ## API Endpoints
 
@@ -136,9 +173,19 @@ Once running, access the web dashboard at:
 
 ### Conversations
 
-- `GET /api/conversations` - List conversations
+- `GET /api/conversations` - List conversations (supports pagination)
 - `GET /api/conversations/:call_id` - Get specific conversation
 - `GET /api/messages` - Get recent messages
+
+### Calendar
+
+- `GET /api/calendar/test` - Test calendar connection and fetch events
+- `GET /api/calendar/events` - Get upcoming calendar events
+
+### Email
+
+- `GET /api/email/test` - Test email connection and fetch unread emails
+- `GET /api/email/unread` - Get unread emails (query param: `limit`)
 
 ### SIP Control
 
@@ -173,24 +220,85 @@ npm run dev
 docker build -t sip-ai-bridge .
 ```
 
+### Project Structure
+
+```
+Sip-Bridge/
+├── backend/              # Python Flask backend
+│   ├── app/
+│   │   ├── main.py      # Flask app and API endpoints
+│   │   ├── sip_client.py # SIP client (PJSUA2)
+│   │   ├── gpt_client.py # Ollama/Groq LLM client
+│   │   ├── transcription.py # Groq Whisper transcription
+│   │   ├── tts_client.py # Text-to-speech client
+│   │   ├── calendar_client.py # Calendar integration
+│   │   ├── email_client.py # Email IMAP integration
+│   │   ├── database.py  # SQLite database models
+│   │   ├── websocket.py  # WebSocket manager
+│   │   └── config.py    # Configuration management
+│   └── requirements.txt
+├── frontend/             # React + TypeScript frontend
+│   ├── src/
+│   │   ├── components/  # React components
+│   │   ├── hooks/       # Custom React hooks
+│   │   └── utils/       # Utility functions
+│   └── package.json
+├── data/                 # Persistent data (database, recordings)
+├── logs/                 # Application logs
+├── docs/                 # Additional documentation
+└── docker-compose.yml    # Docker Compose configuration
+```
+
 ## Services Integration
 
 ### Groq (Speech-to-Text)
 
 Uses Groq's Whisper Large V3 model for transcription:
 - API Docs: https://console.groq.com/docs/api-reference#audio-transcription
+- Fast, accurate speech-to-text conversion
+- Supports multiple audio formats (WAV recommended)
 
 ### Ollama (AI Responses)
 
 Local LLM integration:
 - Website: https://ollama.com
 - Usage: `POST /api/generate` or `POST /api/chat`
+- Default model: llama3.1 (configurable)
+- Accessible from Docker via `host.docker.internal:11434`
 
 ### openai-edge-tts (Text-to-Speech)
 
 OpenAI-compatible TTS endpoint:
 - GitHub: https://github.com/travisvn/openai-edge-tts
 - Endpoint: `POST /v1/audio/speech`
+- Multiple voice options available
+- Natural-sounding voice synthesis
+
+### Calendar Services
+
+iCalendar (.ics) feed integration:
+- Works with Google Calendar, Outlook, iCloud, and other providers
+- Automatic event fetching and context injection
+- 15-minute caching for performance
+- See [Calendar Integration Guide](docs/CALENDAR_INTEGRATION.md) for details
+
+### Email Services (IMAP)
+
+IMAP email integration:
+- Gmail App Password support
+- Works with Outlook, Yahoo, iCloud, and other IMAP providers
+- On-demand email checking during calls
+- See [Email Integration Guide](docs/EMAIL_INTEGRATION.md) for details
+
+## Documentation
+
+Additional detailed documentation is available in the `docs/` directory:
+
+- [Calendar Integration Guide](docs/CALENDAR_INTEGRATION.md) - Setup and usage for calendar features
+- [Email Integration Guide](docs/EMAIL_INTEGRATION.md) - IMAP email setup and configuration
+- [Dashboard Updates](docs/DASHBOARD_UPDATES.md) - Recent UI improvements
+- [Conversation Pagination](docs/CONVERSATION_PAGINATION_UPDATE.md) - Pagination features
+- [Call Status Fix](docs/CALL_STATUS_FIX.md) - Status handling improvements
 
 ## Troubleshooting
 
@@ -200,18 +308,44 @@ OpenAI-compatible TTS endpoint:
 2. Verify network connectivity to PBX
 3. Check firewall allows UDP port 5060
 4. View logs: `docker-compose logs -f`
+5. Ensure DNS resolution is working (container uses custom DNS servers)
 
 ### Transcription Failing
 
 1. Verify Groq API key is valid
 2. Check audio format (WAV, 16kHz recommended)
 3. Ensure network access to api.groq.com
+4. Check Docker logs for transcription errors
 
 ### TTS Not Working
 
 1. Verify TTS API key is configured
-2. Check TTS service is running
+2. Check TTS service is running and accessible
 3. Test endpoint: `POST /api/test/tts`
+4. Verify TTS_URL is correct (use `host.docker.internal` if TTS is on host)
+
+### Calendar Not Working
+
+1. Verify calendar URL is correct and accessible
+2. Ensure URL uses `https://` (not `webcal://`)
+3. Test endpoint: `GET /api/calendar/test`
+4. Check that calendar feed is publicly accessible
+5. See [Calendar Integration Guide](docs/CALENDAR_INTEGRATION.md) for details
+
+### Email Not Working
+
+1. Verify email credentials are configured
+2. For Gmail, ensure you're using an App Password (not regular password)
+3. Check IMAP server and port settings
+4. Test endpoint: `GET /api/email/test`
+5. See [Email Integration Guide](docs/EMAIL_INTEGRATION.md) for details
+
+### Web Interface Not Loading
+
+1. Check that port 3002 is not in use by another service
+2. Verify Docker container is running: `docker-compose ps`
+3. Check container logs: `docker-compose logs sip-bridge`
+4. Ensure frontend was built: `cd frontend && npm run build`
 
 ## License
 

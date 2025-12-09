@@ -88,6 +88,7 @@ class Message(Base):
     timestamp = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     role = Column(String(20))  # user, assistant, system
     content = Column(Text)
+    model = Column(String(50), nullable=True)  # llama3.1, groan-whisper, etc.
     audio_duration = Column(Float, nullable=True)
     
     def to_dict(self) -> Dict[str, Any]:
@@ -105,6 +106,7 @@ class Message(Base):
             'timestamp': ts,
             'role': self.role,
             'content': self.content,
+            'model': self.model,
             'audio_duration': self.audio_duration,
         }
 
@@ -129,14 +131,14 @@ class Settings(Base):
 class CallLog(Base):
     """Model for detailed call logging."""
     __tablename__ = 'call_logs'
-    
+
     id = Column(Integer, primary_key=True, autoincrement=True)
     timestamp = Column(DateTime, default=datetime.utcnow)
     level = Column(String(20))  # info, warning, error
     event = Column(String(100))
     details = Column(Text, nullable=True)
     call_id = Column(String(100), nullable=True, index=True)
-    
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             'id': self.id,
@@ -148,6 +150,90 @@ class CallLog(Base):
         }
 
 
+class CalendarEvent(Base):
+    """Model for storing calendar events from iCalendar sources."""
+    __tablename__ = 'calendar_events'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    event_uid = Column(String(255), unique=True, nullable=False, index=True)
+    summary = Column(Text, nullable=False)
+    start_time = Column(DateTime, nullable=False)
+    end_time = Column(DateTime, nullable=False)
+    description = Column(Text, nullable=True)
+    location = Column(Text, nullable=True)
+    attendees = Column(Text, nullable=True)  # JSON string of attendee objects
+    is_all_day = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+    def to_dict(self) -> Dict[str, Any]:
+        # Parse attendees JSON
+        attendees_list = []
+        if self.attendees:
+            try:
+                attendees_list = json.loads(self.attendees)
+            except:
+                pass
+
+        return {
+            'id': self.id,
+            'event_uid': self.event_uid,
+            'summary': self.summary,
+            'start_time': self.start_time.isoformat() if self.start_time else None,
+            'end_time': self.end_time.isoformat() if self.end_time else None,
+            'description': self.description,
+            'location': self.location,
+            'attendees': attendees_list,
+            'is_all_day': self.is_all_day,
+        }
+
+
+class EmailMessage(Base):
+    """Model for storing email messages fetched via IMAP."""
+    __tablename__ = 'email_messages'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    message_id = Column(String(500), unique=True, nullable=False, index=True)
+    subject = Column(Text, nullable=False)
+    sender = Column(String(255), nullable=False)
+    date = Column(DateTime, nullable=False)
+    body = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    expires_at = Column(DateTime, nullable=True)  # TTL for cleanup (24 hours)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            'id': self.id,
+            'message_id': self.message_id,
+            'subject': self.subject,
+            'sender': self.sender,
+            'date': self.date.isoformat() if self.date else None,
+            'body': self.body,
+        }
+
+
+class MessageCalendarRef(Base):
+    """Model for linking messages to calendar events."""
+    __tablename__ = 'message_calendar_refs'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    message_id = Column(Integer, nullable=False, index=True)
+    calendar_event_id = Column(Integer, nullable=False, index=True)
+    ref_index = Column(Integer, nullable=False)  # Position in message (0, 1, 2...)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+class MessageEmailRef(Base):
+    """Model for linking messages to email messages."""
+    __tablename__ = 'message_email_refs'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    message_id = Column(Integer, nullable=False, index=True)
+    email_message_id = Column(Integer, nullable=False, index=True)
+    ref_index = Column(Integer, nullable=False)  # Position in message (0, 1, 2...)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
 class Database:
     """Database manager for SIP AI Bridge."""
     
@@ -157,6 +243,12 @@ class Database:
         Base.metadata.create_all(self.engine)
         self._migrate_answered_at_column()
         self._migrate_recording_path_column()
+        self._migrate_calendar_events_table()
+        self._migrate_email_messages_table()
+        self._migrate_calendar_events_table()
+        self._migrate_email_messages_table()
+        self._migrate_message_refs_tables()
+        self._migrate_message_model_column()
         self.SessionLocal = sessionmaker(bind=self.engine)
     
     def _migrate_answered_at_column(self) -> None:
@@ -190,6 +282,67 @@ class Database:
         except Exception as e:
             # If migration fails, log but don't crash
             logger.warning(f"Could not migrate recording_path column: {e}")
+
+    def _migrate_calendar_events_table(self) -> None:
+        """Ensure calendar_events table exists with all columns."""
+        try:
+            with self.engine.connect() as conn:
+                # Check if table exists
+                result = conn.execute(text("SELECT name FROM sqlite_master WHERE type='table' AND name='calendar_events'"))
+                if not result.fetchone():
+                    logger.info("calendar_events table will be created by SQLAlchemy")
+        except Exception as e:
+            logger.warning(f"Could not check calendar_events table: {e}")
+
+    def _migrate_email_messages_table(self) -> None:
+        """Ensure email_messages table exists with all columns."""
+        try:
+            with self.engine.connect() as conn:
+                # Check if table exists
+                result = conn.execute(text("SELECT name FROM sqlite_master WHERE type='table' AND name='email_messages'"))
+                if not result.fetchone():
+                    logger.info("email_messages table will be created by SQLAlchemy")
+                else:
+                    # Check if expires_at column exists (added for TTL)
+                    result = conn.execute(text("PRAGMA table_info(email_messages)"))
+                    columns = [row[1] for row in result]
+                    if 'expires_at' not in columns:
+                        conn.execute(text("ALTER TABLE email_messages ADD COLUMN expires_at DATETIME"))
+                        conn.commit()
+                        logger.info("Added expires_at column to email_messages table")
+        except Exception as e:
+            logger.warning(f"Could not migrate email_messages table: {e}")
+
+    def _migrate_message_refs_tables(self) -> None:
+        """Ensure message reference tables exist."""
+        try:
+            with self.engine.connect() as conn:
+                # Check if tables exist
+                result = conn.execute(text("SELECT name FROM sqlite_master WHERE type='table' AND name='message_calendar_refs'"))
+                if not result.fetchone():
+                    logger.info("message_calendar_refs table will be created by SQLAlchemy")
+
+                result = conn.execute(text("SELECT name FROM sqlite_master WHERE type='table' AND name='message_email_refs'"))
+                if not result.fetchone():
+                    logger.info("message_email_refs table will be created by SQLAlchemy")
+        except Exception as e:
+            logger.warning(f"Could not check message reference tables: {e}")
+
+    def _migrate_message_model_column(self) -> None:
+        """Add model column to existing messages table if it doesn't exist."""
+        try:
+            with self.engine.connect() as conn:
+                # Check if column exists
+                result = conn.execute(text("PRAGMA table_info(messages)"))
+                columns = [row[1] for row in result]
+                if 'model' not in columns:
+                    # Add the column
+                    conn.execute(text("ALTER TABLE messages ADD COLUMN model VARCHAR(50)"))
+                    conn.commit()
+                    logger.info("Added model column to messages table")
+        except Exception as e:
+            # If migration fails, log but don't crash
+            logger.warning(f"Could not migrate model column: {e}")
     
     def get_session(self) -> Session:
         """Get a new database session."""
@@ -347,14 +500,15 @@ class Database:
     
     # Message methods
     def add_message(self, conversation_id: int, role: str, content: str,
-                    audio_duration: Optional[float] = None) -> Message:
+                    audio_duration: Optional[float] = None, model: Optional[str] = None) -> Message:
         """Add a message to a conversation."""
         with self.get_session() as session:
             msg = Message(
                 conversation_id=conversation_id,
                 role=role,
                 content=content,
-                audio_duration=audio_duration
+                audio_duration=audio_duration,
+                model=model
             )
             session.add(msg)
             session.commit()
@@ -366,7 +520,7 @@ class Database:
             return msg
 
     def add_message_by_call_id(self, call_id: str, role: str, content: str,
-                                audio_duration: Optional[float] = None) -> Optional[Message]:
+                                audio_duration: Optional[float] = None, model: Optional[str] = None) -> Optional[Message]:
         """Add a message to a conversation by call_id."""
         with self.get_session() as session:
             conv = session.query(Conversation).filter_by(call_id=call_id).first()
@@ -377,7 +531,8 @@ class Database:
                 conversation_id=conv.id,
                 role=role,
                 content=content,
-                audio_duration=audio_duration
+                audio_duration=audio_duration,
+                model=model
             )
             session.add(msg)
             session.commit()
@@ -458,6 +613,223 @@ class Database:
             if call_id:
                 query = query.filter_by(call_id=call_id)
             return query.order_by(CallLog.timestamp.desc()).limit(limit).all()
+
+    # Calendar event methods
+    def store_calendar_event(self, event_uid: str, summary: str, start_time: datetime,
+                            end_time: datetime, description: Optional[str] = None,
+                            location: Optional[str] = None, attendees: Optional[List[Dict]] = None,
+                            is_all_day: bool = False) -> int:
+        """Store or update a calendar event. Returns event ID."""
+        with self.get_session() as session:
+            # Check if event already exists by UID
+            existing = session.query(CalendarEvent).filter_by(event_uid=event_uid).first()
+
+            attendees_json = json.dumps(attendees) if attendees else None
+
+            if existing:
+                # Update existing event
+                existing.summary = summary
+                existing.start_time = start_time
+                existing.end_time = end_time
+                existing.description = description
+                existing.location = location
+                existing.attendees = attendees_json
+                existing.is_all_day = is_all_day
+                existing.updated_at = datetime.now(timezone.utc)
+                session.commit()
+                return existing.id
+            else:
+                # Create new event
+                event = CalendarEvent(
+                    event_uid=event_uid,
+                    summary=summary,
+                    start_time=start_time,
+                    end_time=end_time,
+                    description=description,
+                    location=location,
+                    attendees=attendees_json,
+                    is_all_day=is_all_day
+                )
+                session.add(event)
+                session.commit()
+                session.refresh(event)
+                return event.id
+
+    def get_calendar_event(self, event_id: int) -> Optional[CalendarEvent]:
+        """Get a calendar event by ID."""
+        with self.get_session() as session:
+            return session.query(CalendarEvent).filter_by(id=event_id).first()
+
+    # Email message methods
+    def store_email_message(self, message_id: str, subject: str, sender: str,
+                           date: datetime, body: str) -> int:
+        """Store an email message with 24-hour TTL. Returns email ID."""
+        with self.get_session() as session:
+            # Check if email already exists
+            existing = session.query(EmailMessage).filter_by(message_id=message_id).first()
+
+            if existing:
+                return existing.id
+
+            # Create new email with 24-hour expiry
+            from datetime import timedelta
+            expires_at = datetime.now(timezone.utc) + timedelta(hours=24)
+            email = EmailMessage(
+                message_id=message_id,
+                subject=subject,
+                sender=sender,
+                date=date,
+                body=body,
+                expires_at=expires_at
+            )
+            session.add(email)
+            session.commit()
+            session.refresh(email)
+            return email.id
+
+    def get_email_message(self, email_id: int) -> Optional[EmailMessage]:
+        """Get an email message by ID."""
+        with self.get_session() as session:
+            return session.query(EmailMessage).filter_by(id=email_id).first()
+
+    def cleanup_expired_emails(self) -> int:
+        """Delete expired emails. Returns number of emails deleted."""
+        with self.get_session() as session:
+            now = datetime.now(timezone.utc)
+            expired = session.query(EmailMessage).filter(EmailMessage.expires_at < now).all()
+            count = len(expired)
+            for email in expired:
+                session.delete(email)
+            session.commit()
+            return count
+
+    # Message reference methods
+    def add_calendar_ref(self, message_id: int, calendar_event_id: int, ref_index: int) -> None:
+        """Link a message to a calendar event."""
+        with self.get_session() as session:
+            # Check if reference already exists
+            existing = session.query(MessageCalendarRef)\
+                .filter_by(message_id=message_id, ref_index=ref_index)\
+                .first()
+
+            if not existing:
+                ref = MessageCalendarRef(
+                    message_id=message_id,
+                    calendar_event_id=calendar_event_id,
+                    ref_index=ref_index
+                )
+                session.add(ref)
+                session.commit()
+
+    def add_email_ref(self, message_id: int, email_message_id: int, ref_index: int) -> None:
+        """Link a message to an email."""
+        with self.get_session() as session:
+            # Check if reference already exists
+            existing = session.query(MessageEmailRef)\
+                .filter_by(message_id=message_id, ref_index=ref_index)\
+                .first()
+
+            if not existing:
+                ref = MessageEmailRef(
+                    message_id=message_id,
+                    email_message_id=email_message_id,
+                    ref_index=ref_index
+                )
+                session.add(ref)
+                session.commit()
+
+    def get_message_with_refs(self, message_id: int) -> Optional[Dict[str, Any]]:
+        """Get a message with all its calendar and email references populated."""
+        with self.get_session() as session:
+            message = session.query(Message).filter_by(id=message_id).first()
+            if not message:
+                return None
+
+            # Get calendar references
+            calendar_refs = []
+            cal_refs = session.query(MessageCalendarRef)\
+                .filter_by(message_id=message_id)\
+                .order_by(MessageCalendarRef.ref_index)\
+                .all()
+
+            for ref in cal_refs:
+                event = session.query(CalendarEvent).filter_by(id=ref.calendar_event_id).first()
+                if event:
+                    calendar_refs.append({
+                        'ref_index': ref.ref_index,
+                        'event': event.to_dict()
+                    })
+
+            # Get email references
+            email_refs = []
+            em_refs = session.query(MessageEmailRef)\
+                .filter_by(message_id=message_id)\
+                .order_by(MessageEmailRef.ref_index)\
+                .all()
+
+            for ref in em_refs:
+                email = session.query(EmailMessage).filter_by(id=ref.email_message_id).first()
+                if email:
+                    email_refs.append({
+                        'ref_index': ref.ref_index,
+                        'email': email.to_dict()
+                    })
+
+            # Build complete message dict
+            result = message.to_dict()
+            result['calendar_refs'] = calendar_refs
+            result['email_refs'] = email_refs
+
+            return result
+
+    def get_messages_with_refs(self, conversation_id: int) -> List[Dict[str, Any]]:
+        """Get all messages for a conversation with references populated."""
+        messages = self.get_messages(conversation_id)
+        result = []
+        for msg in messages:
+            msg_with_refs = self.get_message_with_refs(msg.id)
+            if msg_with_refs:
+                result.append(msg_with_refs)
+        return result
+
+    def get_calendar_event(self, event_id: int) -> Optional[Dict[str, Any]]:
+        """Get calendar event by ID."""
+        with self.Session() as session:
+            event = session.query(CalendarEvent).filter_by(id=event_id).first()
+            if not event:
+                return None
+
+            return {
+                'id': event.id,
+                'event_uid': event.event_uid,
+                'summary': event.summary,
+                'start_time': event.start_time.isoformat() if event.start_time else None,
+                'end_time': event.end_time.isoformat() if event.end_time else None,
+                'description': event.description,
+                'location': event.location,
+                'attendees': json.loads(event.attendees) if event.attendees else [],
+                'is_all_day': event.is_all_day,
+                'created_at': event.created_at.isoformat() if event.created_at else None,
+                'updated_at': event.updated_at.isoformat() if event.updated_at else None,
+            }
+
+    def get_email_message(self, email_id: int) -> Optional[Dict[str, Any]]:
+        """Get email message by ID."""
+        with self.Session() as session:
+            email = session.query(EmailMessage).filter_by(id=email_id).first()
+            if not email:
+                return None
+
+            return {
+                'id': email.id,
+                'message_id': email.message_id,
+                'subject': email.subject,
+                'sender': email.sender,
+                'date': email.date.isoformat() if email.date else None,
+                'body': email.body,
+                'created_at': email.created_at.isoformat() if email.created_at else None,
+                'expires_at': email.expires_at.isoformat() if email.expires_at else None,
+            }
 
 
 # Global database instance

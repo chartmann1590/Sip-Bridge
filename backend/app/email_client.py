@@ -266,6 +266,67 @@ class EmailClient:
 
         return "\n".join(lines)
 
+    def persist_emails_to_db(self, emails: List[EmailMessage]) -> List[int]:
+        """
+        Store emails in database and return list of database IDs.
+
+        Args:
+            emails: List of email messages to persist
+
+        Returns:
+            List of database email IDs
+        """
+        from .database import db
+
+        email_ids = []
+        for email_msg in emails:
+            try:
+                email_id = db.store_email_message(
+                    message_id=email_msg.message_id,
+                    subject=email_msg.subject,
+                    sender=email_msg.sender,
+                    date=email_msg.date,
+                    body=email_msg.body
+                )
+                email_ids.append(email_id)
+            except Exception as e:
+                logger.error(f"Could not persist email {email_msg.subject}: {e}")
+                continue
+
+        return email_ids
+
+    def format_emails_for_llm_with_refs(self, emails: List[EmailMessage]) -> tuple[str, List[int]]:
+        """
+        Format emails for LLM with reference indices and persist to database.
+
+        Args:
+            emails: List of email messages
+
+        Returns:
+            Tuple of (formatted string with indices, list of database IDs)
+        """
+        if not emails:
+            return "No unread emails in your inbox.", []
+
+        # Persist emails to database first
+        email_ids = self.persist_emails_to_db(emails)
+
+        lines = ["Here are your most recent unread emails (use [EMAIL:N] to reference):\n"]
+
+        for i, email_msg in enumerate(emails):
+            lines.append(f"[{i}] From: {email_msg.sender}")
+            lines.append(f"    Subject: {email_msg.subject}")
+            lines.append(f"    Received: {email_msg.date.strftime('%A, %B %d at %I:%M %p')}")
+
+            # Include a snippet of the body
+            body_preview = email_msg.body[:200] if email_msg.body else "[No content]"
+            if len(email_msg.body) > 200:
+                body_preview += "..."
+            lines.append(f"    Preview: {body_preview}")
+            lines.append("")  # Blank line between emails
+
+        return "\n".join(lines), email_ids
+
     def check_health(self) -> bool:
         """Check if email connection is working."""
         if not self.email_address or not self.app_password:
