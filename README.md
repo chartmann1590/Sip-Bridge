@@ -10,6 +10,7 @@ A Docker-based SIP voice bridge that connects VoIP calls to AI services for inte
 - **Text-to-Speech**: Uses openai-edge-tts for natural voice synthesis
 - **Web Dashboard**: Real-time monitoring and configuration interface
 - **Persistent Storage**: SQLite database for conversation history and settings
+- **Email Notifications**: Automated email alerts for logs and events
 
 ## Architecture
 
@@ -49,6 +50,7 @@ cp .env.example .env
 
 2. Configure the `.env` file:
 
+```bash
 # Groq API
 GROQ_API_KEY=your_groq_api_key_here
 

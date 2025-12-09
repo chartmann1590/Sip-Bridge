@@ -8,7 +8,9 @@ import {
   Download,
   Search,
   RefreshCw,
-  PhoneOff
+  PhoneOff,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 import { formatTime, formatDate, setTimezone } from '../utils/timezone';
 
@@ -56,17 +58,12 @@ export function ConversationLog({ websocket }: ConversationLogProps) {
   const [refreshing, setRefreshing] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
-  const [shouldAutoScroll, setShouldAutoScroll] = useState(true);
-  const lastMessageCountRef = useRef(0);
   const [timezone, setTimezoneState] = useState<string>('UTC');
 
-  // Check if user is near bottom of scroll
-  const checkScrollPosition = useCallback(() => {
-    if (!messagesContainerRef.current) return;
-    const container = messagesContainerRef.current;
-    const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 150;
-    setShouldAutoScroll(isNearBottom);
-  }, []);
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
+
 
   // Fetch timezone from config
   useEffect(() => {
@@ -127,16 +124,7 @@ export function ConversationLog({ websocket }: ConversationLogProps) {
     return () => clearInterval(interval);
   }, []);
 
-  // Auto-scroll to bottom when new messages arrive
-  useEffect(() => {
-    const currentMessageCount = selectedConv ? messages.length : websocket.messages.length;
-    if (currentMessageCount > lastMessageCountRef.current && shouldAutoScroll) {
-      setTimeout(() => {
-        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-      }, 100);
-    }
-    lastMessageCountRef.current = currentMessageCount;
-  }, [messages.length, websocket.messages.length, shouldAutoScroll, selectedConv]);
+  // Removed auto-scroll behavior - users can manually scroll
 
   // Listen for conversation updates via WebSocket
   useEffect(() => {
@@ -251,8 +239,7 @@ export function ConversationLog({ websocket }: ConversationLogProps) {
   async function selectConversation(conv: Conversation) {
     setSelectedConv(conv);
     await fetchMessages(conv.call_id);
-    setShouldAutoScroll(true);
-    // Scroll to bottom after loading
+    // Scroll to bottom after loading (only on initial load)
     setTimeout(() => {
       messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, 100);
@@ -285,6 +272,17 @@ export function ConversationLog({ websocket }: ConversationLogProps) {
     conv.caller_id.toLowerCase().includes(searchTerm.toLowerCase()) ||
     conv.call_id.toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  // Pagination calculations
+  const totalPages = Math.ceil(filteredConversations.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = startIndex + itemsPerPage;
+  const paginatedConversations = filteredConversations.slice(startIndex, endIndex);
+
+  // Reset to page 1 when search term changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm]);
 
   // Combine stored messages with real-time messages
   const allMessages = selectedConv
@@ -334,7 +332,6 @@ export function ConversationLog({ websocket }: ConversationLogProps) {
           <button
             onClick={() => {
               setSelectedConv(null);
-              setShouldAutoScroll(true);
             }}
             className={`w-full text-left p-3 rounded-lg transition-colors ${selectedConv === null
               ? 'bg-green-500/20 border border-green-500/30'
@@ -355,7 +352,7 @@ export function ConversationLog({ websocket }: ConversationLogProps) {
           ) : filteredConversations.length === 0 ? (
             <p className="text-center text-gray-500 py-8">No conversations found</p>
           ) : (
-            filteredConversations.map((conv) => (
+            paginatedConversations.map((conv) => (
               <button
                 key={conv.id}
                 onClick={() => selectConversation(conv)}
@@ -386,6 +383,36 @@ export function ConversationLog({ websocket }: ConversationLogProps) {
             ))
           )}
         </div>
+
+        {/* Pagination Controls */}
+        {filteredConversations.length > itemsPerPage && (
+          <div className="p-3 border-t border-gray-700 flex items-center justify-between">
+            <p className="text-xs text-gray-400">
+              Showing {startIndex + 1}-{Math.min(endIndex, filteredConversations.length)} of {filteredConversations.length}
+            </p>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                disabled={currentPage === 1}
+                className="p-1.5 rounded-lg hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Previous page"
+              >
+                <ChevronLeft className="w-4 h-4 text-gray-400" />
+              </button>
+              <span className="text-xs text-gray-400 min-w-[60px] text-center">
+                Page {currentPage} of {totalPages}
+              </span>
+              <button
+                onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                disabled={currentPage === totalPages}
+                className="p-1.5 rounded-lg hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Next page"
+              >
+                <ChevronRight className="w-4 h-4 text-gray-400" />
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Message View */}
@@ -473,11 +500,9 @@ export function ConversationLog({ websocket }: ConversationLogProps) {
 
         <div
           ref={messagesContainerRef}
-          onScroll={checkScrollPosition}
           className="flex-1 overflow-y-auto p-4 space-y-4"
           style={{
             scrollbarWidth: 'thin',
-            scrollBehavior: 'smooth',
             overscrollBehavior: 'contain'
           }}
         >

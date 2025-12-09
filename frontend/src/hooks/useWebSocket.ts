@@ -81,8 +81,16 @@ export function useWebSocket() {
       console.log('Server acknowledged connection:', data);
     });
     
-    socket.on('call_status', (data: CallStatus) => {
-      setCallStatus(data);
+    socket.on('call_status', (data: any) => {
+      // Map backend fields to frontend interface
+      const mappedData: CallStatus = {
+        status: data.status,
+        callId: data.call_id,
+        callerId: data.caller_id,
+        timestamp: data.timestamp
+      };
+      console.log('Received call_status:', mappedData);
+      setCallStatus(mappedData);
     });
     
     socket.on('new_message', (data: Message) => {

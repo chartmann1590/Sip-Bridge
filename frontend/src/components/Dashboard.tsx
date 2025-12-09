@@ -1,17 +1,16 @@
 import { useEffect, useState } from 'react';
-import { 
-  Phone, 
-  Mic, 
-  MessageSquare, 
-  Volume2, 
-  Database, 
+import {
+  Phone,
+  Mic,
+  MessageSquare,
+  Volume2,
+  Database,
   Wifi,
   Clock,
   PhoneCall,
   PhoneOff,
   AlertTriangle,
   CheckCircle,
-  XCircle,
   RefreshCw
 } from 'lucide-react';
 import { ServiceCard } from './StatusIndicator';
@@ -63,6 +62,15 @@ export function Dashboard({ websocket }: DashboardProps) {
   });
   const [timezone, setTimezoneState] = useState<string>('UTC');
   const [currentTime, setCurrentTime] = useState<string>('');
+  const [recentCalls, setRecentCalls] = useState<Array<{
+    id: number;
+    call_id: string;
+    caller_id: string;
+    started_at: string;
+    ended_at: string | null;
+    duration_seconds: number;
+    status: string;
+  }>>([]);
   
   // Fetch timezone from config
   useEffect(() => {
@@ -91,7 +99,11 @@ export function Dashboard({ websocket }: DashboardProps) {
   useEffect(() => {
     fetchHealth();
     fetchStats();
-    const interval = setInterval(fetchHealth, 30000);
+    fetchRecentCalls();
+    const interval = setInterval(() => {
+      fetchHealth();
+      fetchRecentCalls();
+    }, 10000); // Update every 10 seconds
     return () => clearInterval(interval);
   }, []);
   
@@ -119,12 +131,22 @@ export function Dashboard({ websocket }: DashboardProps) {
       const data = await res.json();
       setStats({
         totalCalls: data.conversations?.length || 0,
-        activeTime: formatDuration(data.conversations?.reduce((acc: number, c: { duration_seconds?: number }) => 
+        activeTime: formatDuration(data.conversations?.reduce((acc: number, c: { duration_seconds?: number }) =>
           acc + (c.duration_seconds || 0), 0) || 0),
         messagesProcessed: websocket.messages.length,
       });
     } catch (err) {
       console.error('Failed to fetch stats:', err);
+    }
+  }
+
+  async function fetchRecentCalls() {
+    try {
+      const res = await fetch('/api/conversations?limit=10');
+      const data = await res.json();
+      setRecentCalls(data.conversations || []);
+    } catch (err) {
+      console.error('Failed to fetch recent calls:', err);
     }
   }
   
@@ -135,14 +157,6 @@ export function Dashboard({ websocket }: DashboardProps) {
       return `${hours}h ${mins}m`;
     }
     return `${mins}m`;
-  }
-  
-  async function restartSip() {
-    try {
-      await fetch('/api/sip/restart', { method: 'POST' });
-    } catch (err) {
-      console.error('Failed to restart SIP:', err);
-    }
   }
   
   async function hangupCall() {
@@ -316,61 +330,76 @@ export function Dashboard({ websocket }: DashboardProps) {
         </div>
       </div>
       
-      {/* Recent Logs */}
+      {/* Recent Call Activity */}
       <div className="glass rounded-xl p-4">
-        <h3 className="text-lg font-semibold text-white mb-4">Recent Activity</h3>
-        <div className="space-y-2 max-h-64 overflow-y-auto">
-          {websocket.logs.slice(0, 10).map((log, index) => (
-            <div 
-              key={index} 
-              className={`log-entry flex items-start gap-3 p-2 rounded-lg ${
-                log.level === 'error' ? 'bg-red-500/10' :
-                log.level === 'warning' ? 'bg-amber-500/10' :
-                'bg-gray-800/50'
+        <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+          <Phone className="w-5 h-5" />
+          Recent Call Activity
+        </h3>
+        <div className="space-y-2 max-h-96 overflow-y-auto">
+          {recentCalls.map((call) => (
+            <div
+              key={call.id}
+              className={`flex items-center gap-4 p-3 rounded-lg transition-colors ${
+                call.status === 'active'
+                  ? 'bg-green-500/10 border border-green-500/30'
+                  : 'bg-gray-800/50 hover:bg-gray-800'
               }`}
             >
-              {log.level === 'error' ? (
-                <XCircle className="w-4 h-4 text-red-400 mt-0.5 flex-shrink-0" />
-              ) : log.level === 'warning' ? (
-                <AlertTriangle className="w-4 h-4 text-amber-400 mt-0.5 flex-shrink-0" />
-              ) : (
-                <CheckCircle className="w-4 h-4 text-green-400 mt-0.5 flex-shrink-0" />
-              )}
-              <div className="flex-1 min-w-0">
-                <p className="text-sm text-gray-200">{log.event}</p>
-                {log.details && (
-                  <p className="text-xs text-gray-400 truncate">{log.details}</p>
+              <div className={`p-2 rounded-full ${
+                call.status === 'active' ? 'bg-green-500/20' : 'bg-gray-700'
+              }`}>
+                {call.status === 'active' ? (
+                  <PhoneCall className="w-5 h-5 text-green-400" />
+                ) : (
+                  <PhoneOff className="w-5 h-5 text-gray-400" />
                 )}
               </div>
-              <span className="text-xs text-gray-500 flex-shrink-0">
-                {formatTime(log.timestamp, timezone)}
-              </span>
+
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <p className="text-sm font-medium text-gray-200">
+                    {call.caller_id || 'Unknown'}
+                  </p>
+                  <span className={`px-2 py-0.5 text-xs rounded-full ${
+                    call.status === 'active'
+                      ? 'bg-green-500/20 text-green-400'
+                      : call.status === 'completed'
+                      ? 'bg-blue-500/20 text-blue-400'
+                      : 'bg-gray-700 text-gray-400'
+                  }`}>
+                    {call.status}
+                  </span>
+                </div>
+                <div className="flex items-center gap-3 mt-1">
+                  <p className="text-xs text-gray-400">
+                    {formatTime(call.started_at, timezone)}
+                  </p>
+                  {call.duration_seconds > 0 && (
+                    <>
+                      <span className="text-gray-600">•</span>
+                      <p className="text-xs text-gray-400">
+                        Duration: {formatDuration(call.duration_seconds)}
+                      </p>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              <div className="text-right flex-shrink-0">
+                <p className="text-xs text-gray-500 font-mono">
+                  {call.call_id.slice(0, 8)}
+                </p>
+              </div>
             </div>
           ))}
-          {websocket.logs.length === 0 && (
-            <p className="text-center text-gray-500 py-4">No recent activity</p>
+          {recentCalls.length === 0 && (
+            <div className="text-center py-8">
+              <PhoneOff className="w-12 h-12 text-gray-600 mx-auto mb-3" />
+              <p className="text-gray-500">No recent calls</p>
+              <p className="text-xs text-gray-600 mt-1">Calls will appear here once they start coming in</p>
+            </div>
           )}
-        </div>
-      </div>
-      
-      {/* SIP Control */}
-      <div className="glass rounded-xl p-4">
-        <h3 className="text-lg font-semibold text-white mb-4">SIP Control</h3>
-        <div className="flex items-center gap-4">
-          <button
-            onClick={restartSip}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 transition-colors"
-          >
-            <RefreshCw className="w-4 h-4" />
-            Restart SIP Client
-          </button>
-          <div className="text-sm text-gray-400">
-            {websocket.sipStatus?.registered ? (
-              <span className="text-green-400">Registered to PBX</span>
-            ) : (
-              <span className="text-red-400">Not Registered</span>
-            )}
-          </div>
         </div>
       </div>
     </div>

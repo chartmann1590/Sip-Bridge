@@ -23,8 +23,9 @@ from .database import db
 from .websocket import ws_manager
 from .transcription import transcriber
 from .gpt_client import gpt_client
-from .gpt_client import gpt_client
 from .tts_client import tts_client
+from .calendar_client import calendar_client
+from .email_client import email_client
 
 from pathlib import Path
 from datetime import datetime
@@ -314,21 +315,44 @@ class SimpleSIPServer:
             # Extract call info
             call.call_id = call_id
             from_header = self._extract_header(message, 'From')
-            
+
+            # Extract caller ID from From header
+            caller_id = 'Unknown'
+            if from_header:
+                # Try to extract display name or SIP URI
+                if '<' in from_header:
+                    # Format: "Display Name" <sip:user@host>
+                    display_name = from_header.split('<')[0].strip().strip('"')
+                    if display_name:
+                        caller_id = display_name
+                    else:
+                        # Extract user from SIP URI
+                        sip_uri = from_header.split('<')[1].split('>')[0]
+                        if '@' in sip_uri:
+                            caller_id = sip_uri.split(':')[1].split('@')[0]
+                else:
+                    # Format: sip:user@host
+                    if '@' in from_header:
+                        caller_id = from_header.split(':')[1].split('@')[0]
+
             # Extract from-tag
             if from_header and 'tag=' in from_header:
                 call.from_tag = from_header.split('tag=')[1].split(';')[0].split('>')[0]
-            
+
             # Generate to-tag
             call.to_tag = f"tag-{random.randint(100000, 999999)}"
-            
+
             # Store call
             if call.call_id:
                 self.active_calls[call.call_id] = call
-            
+
             # Send 100 Trying
             self._send_response(100, 'Trying', addr, message)
-            
+
+            # Broadcast 'ringing' status
+            ws_manager.broadcast_call_status('ringing', call_id, caller_id)
+            logger.info(f"Incoming call from {caller_id} (Call-ID: {call_id})")
+
             # Send 180 Ringing
             time.sleep(0.1)
             self._send_response(180, 'Ringing', addr, message, to_tag=call.to_tag)
@@ -887,6 +911,51 @@ class CallSession:
 
                 # Add system message with bot persona
                 persona = Config.BOT_PERSONA
+
+                # Check if user is asking about emails (on-demand only)
+                email_keywords = ['email', 'e-mail', 'mail', 'inbox', 'message']
+                is_asking_about_email = any(keyword in text.lower() for keyword in email_keywords)
+
+                # Add email context if user asks about emails AND credentials are configured
+                if is_asking_about_email and Config.EMAIL_ADDRESS and Config.EMAIL_APP_PASSWORD:
+                    try:
+                        # Update email client credentials
+                        email_client.set_credentials(
+                            Config.EMAIL_ADDRESS,
+                            Config.EMAIL_APP_PASSWORD,
+                            Config.EMAIL_IMAP_SERVER,
+                            Config.EMAIL_IMAP_PORT
+                        )
+
+                        # Fetch unread emails
+                        unread_emails, error = email_client.fetch_unread_emails(limit=3)
+
+                        if not error and unread_emails:
+                            email_info = email_client.format_emails_for_llm(unread_emails)
+                            persona = f"{persona}\n\n{email_info}"
+                            logger.info(f"Added {len(unread_emails)} unread emails to context")
+                        elif not error and unread_emails is not None:
+                            persona = f"{persona}\n\nYou have no unread emails in your inbox."
+                            logger.info("No unread emails found")
+                    except Exception as e:
+                        logger.warning(f"Could not fetch emails: {e}")
+
+                # Add calendar context if calendar URL is configured
+                if Config.CALENDAR_URL:
+                    try:
+                        # Update calendar client URL
+                        calendar_client.set_calendar_url(Config.CALENDAR_URL)
+
+                        # Get upcoming events (next 30 days)
+                        upcoming_events = calendar_client.get_upcoming_events(days=30, limit=20)
+
+                        if upcoming_events:
+                            calendar_info = calendar_client.format_events_for_llm(upcoming_events, Config.TIMEZONE)
+                            persona = f"{persona}\n\nYou have access to the user's calendar. {calendar_info}"
+                            logger.info(f"Added {len(upcoming_events)} calendar events to context")
+                    except Exception as e:
+                        logger.warning(f"Could not fetch calendar events: {e}")
+
                 conversation_messages.append({
                     'role': 'system',
                     'content': persona
@@ -1126,10 +1195,17 @@ class CallSession:
             db.end_conversation(self.call_state.call_id)
             ws_manager.broadcast_call_status('ended', self.call_state.call_id, self.call_state.caller_id)
             db.add_log('info', 'call_ended', 'Call ended', self.call_state.call_id)
-        
+
+            # After a brief delay, broadcast 'idle' status to reset UI
+            import threading
+            def reset_to_idle():
+                time.sleep(1)
+                ws_manager.broadcast_call_status('idle')
+            threading.Thread(target=reset_to_idle, daemon=True).start()
+
         if self.sip_call:
             self.sip_call.close()
-        
+
         logger.info("Call session stopped")
 
 

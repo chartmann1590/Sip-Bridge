@@ -40,6 +40,9 @@ class WebSocketManager:
                               caller_id: Optional[str] = None, details: Optional[Dict] = None) -> None:
         """Broadcast call status update to all connected clients."""
         if self.socketio:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.debug(f"Broadcasting call status: {status} for call {call_id}")
             self.socketio.emit('call_status', {
                 'status': status,
                 'call_id': call_id,

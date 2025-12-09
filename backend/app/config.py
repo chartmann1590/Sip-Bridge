@@ -52,6 +52,15 @@ class Config:
     # Bot Persona
     BOT_PERSONA: str = os.getenv('BOT_PERSONA', 'You are a friendly AI assistant on a phone call. Keep your responses short, conversational, and to the point. Avoid long explanations, lists, or formatting. Speak naturally, as if you are talking to a friend on the phone.')
 
+    # Calendar Integration
+    CALENDAR_URL: str = os.getenv('CALENDAR_URL', '')
+
+    # Email Integration (IMAP)
+    EMAIL_ADDRESS: str = os.getenv('EMAIL_ADDRESS', '')
+    EMAIL_APP_PASSWORD: str = os.getenv('EMAIL_APP_PASSWORD', '')
+    EMAIL_IMAP_SERVER: str = os.getenv('EMAIL_IMAP_SERVER', 'imap.gmail.com')
+    EMAIL_IMAP_PORT: int = int(os.getenv('EMAIL_IMAP_PORT', '993'))
+
     @classmethod
     def ensure_data_dir(cls) -> None:
         """Ensure data directory exists."""
@@ -71,10 +80,15 @@ class Config:
             'tts_voice': cls.TTS_VOICE,
             'timezone': cls.TIMEZONE,
             'bot_persona': cls.BOT_PERSONA,
+            'calendar_url': cls.CALENDAR_URL,
+            'email_address': cls.EMAIL_ADDRESS,
+            'email_imap_server': cls.EMAIL_IMAP_SERVER,
+            'email_imap_port': cls.EMAIL_IMAP_PORT,
             'web_port': cls.WEB_PORT,
             'api_port': cls.API_PORT,
             'has_groq_key': bool(cls.GROQ_API_KEY),
             'has_tts_key': bool(cls.TTS_API_KEY),
+            'has_email_password': bool(cls.EMAIL_APP_PASSWORD),
         }
     
     @classmethod
@@ -106,6 +120,16 @@ class Config:
             cls.TIMEZONE = data['timezone']
         if 'bot_persona' in data:
             cls.BOT_PERSONA = data['bot_persona']
+        if 'calendar_url' in data:
+            cls.CALENDAR_URL = data['calendar_url']
+        if 'email_address' in data:
+            cls.EMAIL_ADDRESS = data['email_address']
+        if 'email_app_password' in data:
+            cls.EMAIL_APP_PASSWORD = data['email_app_password']
+        if 'email_imap_server' in data:
+            cls.EMAIL_IMAP_SERVER = data['email_imap_server']
+        if 'email_imap_port' in data:
+            cls.EMAIL_IMAP_PORT = int(data['email_imap_port'])
 
 
 # Initialize data directory

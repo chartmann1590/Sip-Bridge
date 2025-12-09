@@ -15,7 +15,9 @@ import {
   Download,
   Cpu,
   Clock,
-  Play
+  Play,
+  Calendar,
+  Mail
 } from 'lucide-react';
 import { setTimezone, getCurrentTime } from '../utils/timezone';
 
@@ -33,6 +35,11 @@ interface Config {
   groq_api_key?: string;
   timezone?: string;
   bot_persona?: string;
+  calendar_url?: string;
+  email_address?: string;
+  email_app_password?: string;
+  email_imap_server?: string;
+  email_imap_port?: number;
 }
 
 interface OllamaModel {
@@ -775,7 +782,114 @@ export function Settings() {
           </p>
         </div>
       </div>
-      
+
+      {/* Calendar Integration */}
+      <div className="glass rounded-xl p-6">
+        <div className="flex items-center gap-3 mb-6">
+          <div className="p-2 rounded-lg bg-teal-500/20">
+            <Calendar className="w-5 h-5 text-teal-400" />
+          </div>
+          <div>
+            <h3 className="text-lg font-semibold text-white">Calendar Integration</h3>
+            <p className="text-sm text-gray-400">Connect your calendar so the AI can access your schedule</p>
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-300 mb-2">
+            Calendar URL (iCalendar/ICS)
+          </label>
+          <input
+            type="text"
+            value={config.calendar_url || ''}
+            onChange={(e) => handleChange('calendar_url', e.target.value)}
+            className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-gray-200 focus:outline-none focus:border-green-500 font-mono text-sm"
+            placeholder="https://api.cupla.app/api/calendars/..."
+          />
+          <p className="text-xs text-gray-500 mt-1">
+            Enter your iCalendar feed URL. Most calendar apps (Google Calendar, Outlook, etc.) provide an ICS export URL. The AI will be able to answer questions about your schedule.
+          </p>
+        </div>
+      </div>
+
+      {/* Email Integration */}
+      <div className="glass rounded-xl p-6">
+        <div className="flex items-center gap-3 mb-6">
+          <div className="p-2 rounded-lg bg-purple-500/20">
+            <Mail className="w-5 h-5 text-purple-400" />
+          </div>
+          <div>
+            <h3 className="text-lg font-semibold text-white">Email Integration (IMAP)</h3>
+            <p className="text-sm text-gray-400">Connect your email so the AI can check your inbox when asked</p>
+          </div>
+        </div>
+
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-300 mb-2">
+              Email Address
+            </label>
+            <input
+              type="email"
+              value={config.email_address || ''}
+              onChange={(e) => handleChange('email_address', e.target.value)}
+              className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-gray-200 focus:outline-none focus:border-green-500"
+              placeholder="your.email@gmail.com"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-300 mb-2">
+              App Password
+            </label>
+            <input
+              type="password"
+              value={config.email_app_password || ''}
+              onChange={(e) => handleChange('email_app_password', e.target.value)}
+              className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-gray-200 focus:outline-none focus:border-green-500 font-mono text-sm"
+              placeholder="••••••••••••••••"
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              For Gmail: Create an <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">App Password</a> (not your regular password)
+            </p>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-2">
+                IMAP Server
+              </label>
+              <input
+                type="text"
+                value={config.email_imap_server || 'imap.gmail.com'}
+                onChange={(e) => handleChange('email_imap_server', e.target.value)}
+                className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-gray-200 focus:outline-none focus:border-green-500"
+                placeholder="imap.gmail.com"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-2">
+                IMAP Port
+              </label>
+              <input
+                type="number"
+                value={config.email_imap_port || 993}
+                onChange={(e) => handleChange('email_imap_port', parseInt(e.target.value))}
+                className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-gray-200 focus:outline-none focus:border-green-500"
+                placeholder="993"
+              />
+            </div>
+          </div>
+
+          <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-4">
+            <p className="text-sm text-blue-300">
+              <strong>How it works:</strong> The AI will only check your email when you specifically ask about it during a call (e.g., "Do I have any new emails?"). It will fetch your 3 most recent unread emails from your primary inbox.
+            </p>
+          </div>
+        </div>
+      </div>
+
       {/* Test Buttons */}
       <div className="glass rounded-xl p-6">
         <h3 className="text-lg font-semibold text-white mb-4">Test Services</h3>

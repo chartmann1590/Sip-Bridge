@@ -30,4 +30,8 @@ asyncio-mqtt==0.16.2
 
 # Utilities
 python-dateutil==2.8.2
+pytz==2024.1
+
+# Calendar parsing
+icalendar==5.0.11
 

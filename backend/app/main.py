@@ -1,4 +1,7 @@
 """Main Flask application for SIP AI Bridge."""
+import eventlet
+eventlet.monkey_patch()
+
 import os
 import threading
 import time
@@ -14,6 +17,8 @@ from .websocket import ws_manager
 from .transcription import transcriber
 from .gpt_client import gpt_client
 from .tts_client import tts_client
+from .calendar_client import calendar_client
+from .email_client import email_client
 
 # Configure logging
 log_dir = Path(__file__).parent.parent.parent / 'logs'
@@ -90,6 +95,12 @@ def serve_static(path):
 @app.route('/api/health', methods=['GET'])
 def health_check():
     """Health check endpoint."""
+    # Check calendar health only if URL is configured
+    calendar_healthy = None
+    if Config.CALENDAR_URL:
+        calendar_client.set_calendar_url(Config.CALENDAR_URL)
+        calendar_healthy = calendar_client.check_health()
+
     services = {
         'api': True,
         'database': True,
@@ -97,9 +108,10 @@ def health_check():
         'ollama': gpt_client.check_health(),
         'tts': tts_client.check_health(),
         'sip': sip_client.is_registered if sip_client else False,
+        'calendar': calendar_healthy if calendar_healthy is not None else 'not_configured',
     }
-    
-    all_healthy = all(services.values())
+
+    all_healthy = all(v is True or v == 'not_configured' for v in services.values())
     return jsonify({
         'status': 'healthy' if all_healthy else 'degraded',
         'services': services,
@@ -154,6 +166,117 @@ def update_config():
 def get_voices():
     """Get available TTS voices."""
     return jsonify({'voices': tts_client.get_available_voices()})
+
+
+# =====================
+# Calendar APIs
+# =====================
+
+@app.route('/api/calendar/test', methods=['GET'])
+def test_calendar():
+    """Test calendar connection and fetch events."""
+    if not Config.CALENDAR_URL:
+        return jsonify({'error': 'No calendar URL configured'}), 400
+
+    # Update calendar client URL
+    calendar_client.set_calendar_url(Config.CALENDAR_URL)
+
+    # Fetch events
+    events, error = calendar_client.fetch_calendar()
+
+    if error:
+        return jsonify({'error': error}), 500
+
+    # Get upcoming events (next 30 days)
+    upcoming_events = calendar_client.get_upcoming_events(days=30, limit=20)
+
+    return jsonify({
+        'status': 'success',
+        'total_events': len(events) if events else 0,
+        'upcoming_events': [event.to_dict() for event in upcoming_events],
+    })
+
+
+@app.route('/api/calendar/events', methods=['GET'])
+def get_calendar_events():
+    """Get calendar events."""
+    if not Config.CALENDAR_URL:
+        return jsonify({'error': 'No calendar URL configured'}), 400
+
+    # Get query parameters
+    days = request.args.get('days', 30, type=int)
+    limit = request.args.get('limit', 50, type=int)
+
+    # Update calendar client URL
+    calendar_client.set_calendar_url(Config.CALENDAR_URL)
+
+    # Get upcoming events
+    upcoming_events = calendar_client.get_upcoming_events(days=days, limit=limit)
+
+    return jsonify({
+        'events': [event.to_dict() for event in upcoming_events],
+        'count': len(upcoming_events),
+    })
+
+
+# =====================
+# Email APIs
+# =====================
+
+@app.route('/api/email/test', methods=['GET'])
+def test_email():
+    """Test email connection and fetch unread emails."""
+    if not Config.EMAIL_ADDRESS or not Config.EMAIL_APP_PASSWORD:
+        return jsonify({'error': 'Email credentials not configured'}), 400
+
+    # Update email client credentials
+    email_client.set_credentials(
+        Config.EMAIL_ADDRESS,
+        Config.EMAIL_APP_PASSWORD,
+        Config.EMAIL_IMAP_SERVER,
+        Config.EMAIL_IMAP_PORT
+    )
+
+    # Fetch unread emails
+    emails, error = email_client.fetch_unread_emails(limit=3)
+
+    if error:
+        return jsonify({'error': error}), 500
+
+    return jsonify({
+        'status': 'success',
+        'count': len(emails) if emails else 0,
+        'emails': [email.to_dict() for email in emails] if emails else [],
+    })
+
+
+@app.route('/api/email/unread', methods=['GET'])
+def get_unread_emails():
+    """Get unread emails."""
+    if not Config.EMAIL_ADDRESS or not Config.EMAIL_APP_PASSWORD:
+        return jsonify({'error': 'Email credentials not configured'}), 400
+
+    # Get query parameters
+    limit = request.args.get('limit', 3, type=int)
+
+    # Update email client credentials
+    email_client.set_credentials(
+        Config.EMAIL_ADDRESS,
+        Config.EMAIL_APP_PASSWORD,
+        Config.EMAIL_IMAP_SERVER,
+        Config.EMAIL_IMAP_PORT
+    )
+
+    # Fetch unread emails
+    emails, error = email_client.fetch_unread_emails(limit=limit)
+
+    if error:
+        return jsonify({'error': error}), 500
+
+    return jsonify({
+        'emails': [email.to_dict() for email in emails] if emails else [],
+        'count': len(emails) if emails else 0,
+    })
 
 
 # =====================
