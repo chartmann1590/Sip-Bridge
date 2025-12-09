@@ -6,7 +6,7 @@ A Docker-based SIP voice bridge that connects VoIP calls to AI services for inte
 
 - **SIP Integration**: Connects to any SIP-compatible PBX on a configurable extension
 - **Speech-to-Text**: Uses Groq's Whisper API for fast, accurate transcription
-- **AI Responses**: Integrates with local Ollama instance for intelligent responses
+- **AI Responses**: Integrates with local Ollama instance for intelligent responses with automatic Groq LLM fallback
 - **Text-to-Speech**: Uses openai-edge-tts for natural voice synthesis
 - **Web Dashboard**: Real-time monitoring and configuration interface
 - **Persistent Storage**: SQLite database for conversation history and settings
@@ -22,7 +22,7 @@ A Docker-based SIP voice bridge that connects VoIP calls to AI services for inte
 │                     Docker Container                             │
 │  ┌──────────────┐    ┌──────────────┐    ┌──────────────────┐  │
 │  │  SIP Client  │───▶│ Flask Backend│◀──▶│  React Frontend  │  │
-│  │  (PJSUA2)    │    │  + WebSocket │    │  (Port 3000)     │  │
+│  │  (PJSUA2)    │    │  + WebSocket │    │  (Port 3002)     │  │
 │  │  Port 5060   │    │  Port 5001   │    └──────────────────┘  │
 │  └──────────────┘    └──────────────┘                          │
 └─────────────────────────────────────────────────────────────────┘
@@ -30,7 +30,10 @@ A Docker-based SIP voice bridge that connects VoIP calls to AI services for inte
          ▼                   ▼                   ▼
     ┌─────────┐        ┌─────────┐        ┌─────────────┐
     │ SIP PBX │        │  Groq   │        │ Ollama + TTS │
-    └─────────┘        └─────────┘        └─────────────┘
+    └─────────┘        │(STT+LLM)│        │  (Primary)  │
+                       └─────────┘        └─────────────┘
+                                            (falls back
+                                             to Groq LLM)
 ```
 
 ## Quick Start
@@ -54,8 +57,9 @@ cp .env.example .env
 2. Configure the `.env` file:
 
 ```bash
-# Groq API
+# Groq API (for speech-to-text and LLM fallback)
 GROQ_API_KEY=your_groq_api_key_here
+GROQ_LLM_MODEL=llama-3.1-8b-instant  # LLM model for fallback (optional)
 
 # SIP Configuration
 SIP_HOST=your_sip_server_ip
@@ -251,20 +255,27 @@ Sip-Bridge/
 
 ## Services Integration
 
-### Groq (Speech-to-Text)
+### Groq (Speech-to-Text & LLM Fallback)
 
-Uses Groq's Whisper Large V3 model for transcription:
+**Speech-to-Text**: Uses Groq's Whisper Large V3 model for transcription:
 - API Docs: https://console.groq.com/docs/api-reference#audio-transcription
 - Fast, accurate speech-to-text conversion
 - Supports multiple audio formats (WAV recommended)
 
-### Ollama (AI Responses)
+**LLM Fallback**: Automatically used when Ollama is unavailable:
+- Same API key as transcription (no additional setup needed)
+- Default model: `llama-3.1-8b-instant` (configurable)
+- Seamless fallback ensures calls continue even if local Ollama fails
+- Fast cloud-based responses
+
+### Ollama (AI Responses - Primary)
 
 Local LLM integration:
 - Website: https://ollama.com
 - Usage: `POST /api/generate` or `POST /api/chat`
 - Default model: llama3.1 (configurable)
 - Accessible from Docker via `host.docker.internal:11434`
+- **Automatic Fallback**: If Ollama is unavailable, automatically falls back to Groq LLM API
 
 ### openai-edge-tts (Text-to-Speech)
 
@@ -323,6 +334,16 @@ Additional detailed documentation is available in the `docs/` directory:
 2. Check TTS service is running and accessible
 3. Test endpoint: `POST /api/test/tts`
 4. Verify TTS_URL is correct (use `host.docker.internal` if TTS is on host)
+
+### AI Responses Not Working
+
+1. Verify Ollama is running and accessible
+2. Check OLLAMA_URL is correct (use `host.docker.internal` from Docker)
+3. Test endpoint: `POST /api/test/ollama`
+4. Verify model is available: `curl http://localhost:11434/api/tags`
+5. **Automatic Fallback**: If Ollama fails, the system automatically uses Groq LLM (requires `GROQ_API_KEY`)
+6. Check logs to see which provider was used: `docker-compose logs | grep llm`
+7. Configure Groq LLM model (optional): Set `GROQ_LLM_MODEL` in `.env` (default: `llama-3.1-8b-instant`)
 
 ### Calendar Not Working
 
