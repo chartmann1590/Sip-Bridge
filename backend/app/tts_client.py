@@ -131,8 +131,8 @@ class TTSClient:
             # Fetch all available voices from edge-tts
             async def _fetch_voices():
                 voices_list = []
-                voices_iterable = await edge_tts.list_voices()
-                async for voice in voices_iterable:
+                voices = await edge_tts.list_voices()
+                for voice in voices:
                     # Extract the 'Name' field from each voice object
                     if 'Name' in voice:
                         voices_list.append(voice['Name'])
