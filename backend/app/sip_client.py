@@ -113,6 +113,8 @@ class SIPCall:
         try:
             self.rtp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             self.rtp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            # Increase receive buffer to prevent packet loss during heavy processing
+            self.rtp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 262144)  # 256KB buffer
             
             # Try to bind to a port in the configured range
             rtp_min = int(os.getenv('RTP_PORT_MIN', 10000))
@@ -683,7 +685,7 @@ class CallSession:
                 #     self.stop()
                 #     break
 
-                data, addr = self.sip_call.rtp_socket.recvfrom(2048)
+                data, addr = self.sip_call.rtp_socket.recvfrom(4096)  # Larger buffer for better performance
                 
                 if len(data) < 12:
                     continue  # Invalid RTP packet
@@ -1459,6 +1461,9 @@ Only use markers for events/emails/weather/TomTom data explicitly listed above. 
         try:
             try:
                 from pydub import AudioSegment
+                import gevent
+
+                rtp_start = time.time()
 
                 # Load audio (MP3 from TTS)
                 audio = AudioSegment.from_mp3(io.BytesIO(audio_data))
@@ -1468,6 +1473,9 @@ Only use markers for events/emails/weather/TomTom data explicitly listed above. 
 
                 # Get raw PCM
                 pcm = audio.raw_data
+
+                audio_duration = len(pcm) / (8000 * 2)  # samples / (rate * bytes_per_sample)
+                logger.info(f"Starting RTP playback: {len(audio_data)} bytes MP3 -> {len(pcm)} bytes PCM ({audio_duration:.1f}s)")
 
                 # Record outgoing audio (Assistant)
                 self._write_audio_to_recording(pcm)
@@ -1479,8 +1487,14 @@ Only use markers for events/emails/weather/TomTom data explicitly listed above. 
                 # Use precise timing to avoid drift
                 start_time = time.time()
                 packet_num = 0
+                total_packets = len(pcm) // chunk_size
 
                 for i in range(0, len(pcm), chunk_size):
+                    # Check if call is still active
+                    if not self.active:
+                        logger.info("Call ended during RTP playback, stopping")
+                        break
+
                     chunk = pcm[i:i + chunk_size]
                     if len(chunk) == 0:
                         continue
@@ -1497,6 +1511,13 @@ Only use markers for events/emails/weather/TomTom data explicitly listed above. 
 
                     if sleep_time > 0:
                         time.sleep(sleep_time)
+
+                    # Yield to other greenlets every 5 packets (~100ms) for better responsiveness
+                    if packet_num % 5 == 0:
+                        gevent.sleep(0)  # Yield without delay
+
+                rtp_duration = time.time() - rtp_start
+                logger.info(f"RTP playback completed: {packet_num}/{total_packets} packets in {rtp_duration:.2f}s (expected {audio_duration:.1f}s)")
 
             except ImportError:
                 logger.warning("pydub not available, cannot play TTS audio")
