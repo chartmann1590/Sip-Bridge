@@ -55,6 +55,8 @@ class WebSocketManager:
                           call_id: Optional[str] = None,
                           calendar_refs: Optional[list] = None,
                           email_refs: Optional[list] = None,
+                          weather_refs: Optional[list] = None,
+                          tomtom_refs: Optional[list] = None,
                           model: Optional[str] = None) -> None:
         """Broadcast a new message to all connected clients."""
         if self.socketio:
@@ -72,6 +74,10 @@ class WebSocketManager:
                 message_data['calendar_refs'] = calendar_refs
             if email_refs:
                 message_data['email_refs'] = email_refs
+            if weather_refs:
+                message_data['weather_refs'] = weather_refs
+            if tomtom_refs:
+                message_data['tomtom_refs'] = tomtom_refs
 
             self.socketio.emit('new_message', message_data)
     

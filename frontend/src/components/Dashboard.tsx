@@ -11,10 +11,15 @@ import {
   PhoneOff,
   AlertTriangle,
   CheckCircle,
-  RefreshCw
+  RefreshCw,
+  Calendar,
+  Mail,
+  Cloud,
+  Map
 } from 'lucide-react';
 import { ServiceCard } from './StatusIndicator';
 import { formatTime, getCurrentTime, setTimezone } from '../utils/timezone';
+import { ServiceInfoModal, serviceInfoMap } from './ServiceInfoModal';
 
 interface DashboardProps {
   websocket: {
@@ -71,21 +76,36 @@ export function Dashboard({ websocket }: DashboardProps) {
     duration_seconds: number;
     status: string;
   }>>([]);
+  const [selectedServiceInfo, setSelectedServiceInfo] = useState<typeof serviceInfoMap[keyof typeof serviceInfoMap] | null>(null);
+  const [serviceStatuses, setServiceStatuses] = useState<Record<string, boolean>>({
+    calendar: false,
+    email: false,
+    weather: false,
+    tomtom: false,
+  });
   
-  // Fetch timezone from config
+  // Fetch timezone and service statuses from config
   useEffect(() => {
-    async function fetchTimezone() {
+    async function fetchConfig() {
       try {
         const res = await fetch('/api/config');
         const data = await res.json();
         const tz = data.timezone || 'UTC';
         setTimezoneState(tz);
         setTimezone(tz);
+
+        // Update service statuses based on API keys
+        setServiceStatuses({
+          calendar: !!data.calendar_url,
+          email: data.has_email_password ?? false,
+          weather: data.has_weather_key ?? false,
+          tomtom: data.has_tomtom_key ?? false,
+        });
       } catch (err) {
-        console.error('Failed to fetch timezone:', err);
+        console.error('Failed to fetch config:', err);
       }
     }
-    fetchTimezone();
+    fetchConfig();
   }, []);
   
   // Update current time display
@@ -313,7 +333,93 @@ export function Dashboard({ websocket }: DashboardProps) {
           />
         </div>
       </div>
-      
+
+      {/* AI Integrations */}
+      <div>
+        <h3 className="text-lg font-semibold text-white mb-4">AI Integrations</h3>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <button
+            onClick={() => setSelectedServiceInfo({ ...serviceInfoMap.calendar, status: serviceStatuses.calendar })}
+            className="glass rounded-xl p-4 hover:bg-white/5 transition-all duration-200 text-left group"
+          >
+            <div className="flex items-start justify-between mb-3">
+              <div className={`p-2 rounded-lg ${serviceStatuses.calendar ? 'bg-indigo-500/20' : 'bg-gray-700'}`}>
+                <Calendar className={`w-5 h-5 ${serviceStatuses.calendar ? 'text-indigo-400' : 'text-gray-500'}`} />
+              </div>
+              <div className={`px-2 py-1 rounded text-xs font-semibold ${
+                serviceStatuses.calendar
+                  ? 'bg-green-500/20 text-green-300'
+                  : 'bg-gray-700 text-gray-400'
+              }`}>
+                {serviceStatuses.calendar ? 'Active' : 'Inactive'}
+              </div>
+            </div>
+            <h4 className="font-semibold text-white mb-1 group-hover:text-indigo-300 transition-colors">Calendar</h4>
+            <p className="text-xs text-gray-400">Access your schedule and events</p>
+          </button>
+
+          <button
+            onClick={() => setSelectedServiceInfo({ ...serviceInfoMap.email, status: serviceStatuses.email })}
+            className="glass rounded-xl p-4 hover:bg-white/5 transition-all duration-200 text-left group"
+          >
+            <div className="flex items-start justify-between mb-3">
+              <div className={`p-2 rounded-lg ${serviceStatuses.email ? 'bg-blue-500/20' : 'bg-gray-700'}`}>
+                <Mail className={`w-5 h-5 ${serviceStatuses.email ? 'text-blue-400' : 'text-gray-500'}`} />
+              </div>
+              <div className={`px-2 py-1 rounded text-xs font-semibold ${
+                serviceStatuses.email
+                  ? 'bg-green-500/20 text-green-300'
+                  : 'bg-gray-700 text-gray-400'
+              }`}>
+                {serviceStatuses.email ? 'Active' : 'Inactive'}
+              </div>
+            </div>
+            <h4 className="font-semibold text-white mb-1 group-hover:text-blue-300 transition-colors">Email</h4>
+            <p className="text-xs text-gray-400">Check inbox and messages</p>
+          </button>
+
+          <button
+            onClick={() => setSelectedServiceInfo({ ...serviceInfoMap.weather, status: serviceStatuses.weather })}
+            className="glass rounded-xl p-4 hover:bg-white/5 transition-all duration-200 text-left group"
+          >
+            <div className="flex items-start justify-between mb-3">
+              <div className={`p-2 rounded-lg ${serviceStatuses.weather ? 'bg-cyan-500/20' : 'bg-gray-700'}`}>
+                <Cloud className={`w-5 h-5 ${serviceStatuses.weather ? 'text-cyan-400' : 'text-gray-500'}`} />
+              </div>
+              <div className={`px-2 py-1 rounded text-xs font-semibold ${
+                serviceStatuses.weather
+                  ? 'bg-green-500/20 text-green-300'
+                  : 'bg-gray-700 text-gray-400'
+              }`}>
+                {serviceStatuses.weather ? 'Active' : 'Inactive'}
+              </div>
+            </div>
+            <h4 className="font-semibold text-white mb-1 group-hover:text-cyan-300 transition-colors">Weather</h4>
+            <p className="text-xs text-gray-400">Get weather information</p>
+          </button>
+
+          <button
+            onClick={() => setSelectedServiceInfo({ ...serviceInfoMap.tomtom, status: serviceStatuses.tomtom })}
+            className="glass rounded-xl p-4 hover:bg-white/5 transition-all duration-200 text-left group"
+          >
+            <div className="flex items-start justify-between mb-3">
+              <div className={`p-2 rounded-lg ${serviceStatuses.tomtom ? 'bg-red-500/20' : 'bg-gray-700'}`}>
+                <Map className={`w-5 h-5 ${serviceStatuses.tomtom ? 'text-red-400' : 'text-gray-500'}`} />
+              </div>
+              <div className={`px-2 py-1 rounded text-xs font-semibold ${
+                serviceStatuses.tomtom
+                  ? 'bg-green-500/20 text-green-300'
+                  : 'bg-gray-700 text-gray-400'
+              }`}>
+                {serviceStatuses.tomtom ? 'Active' : 'Inactive'}
+              </div>
+            </div>
+            <h4 className="font-semibold text-white mb-1 group-hover:text-red-300 transition-colors">TomTom Maps</h4>
+            <p className="text-xs text-gray-400">Directions, traffic & POI</p>
+          </button>
+        </div>
+      </div>
+
       {/* Quick Stats */}
       <div className="grid grid-cols-3 gap-4">
         <div className="glass rounded-xl p-4 text-center">
@@ -402,6 +508,14 @@ export function Dashboard({ websocket }: DashboardProps) {
           )}
         </div>
       </div>
+
+      {/* Service Info Modal */}
+      {selectedServiceInfo && (
+        <ServiceInfoModal
+          service={selectedServiceInfo}
+          onClose={() => setSelectedServiceInfo(null)}
+        />
+      )}
     </div>
   );
 }

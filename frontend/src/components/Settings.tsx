@@ -18,7 +18,8 @@ import {
   Play,
   Calendar,
   Mail,
-  Cloud
+  Cloud,
+  Map
 } from 'lucide-react';
 import { setTimezone, getCurrentTime } from '../utils/timezone';
 
@@ -42,6 +43,7 @@ interface Config {
   email_imap_server?: string;
   email_imap_port?: number;
   openweather_api_key?: string;
+  tomtom_api_key?: string;
 }
 
 interface OllamaModel {
@@ -931,6 +933,49 @@ export function Settings() {
           </div>
           <p className="text-xs text-gray-500 mt-1">
             Get your free API key at <a href="https://openweathermap.org/api" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">openweathermap.org/api</a>. The AI will be able to answer questions about the weather when you ask.
+          </p>
+        </div>
+      </div>
+
+      {/* TomTom Integration */}
+      <div className="glass rounded-xl p-6 space-y-4">
+        <div className="flex items-center gap-3 mb-4">
+          <div className="p-2 bg-red-500/10 rounded-lg">
+            <Map className="w-5 h-5 text-red-400" />
+          </div>
+          <div>
+            <h3 className="text-lg font-semibold text-white">TomTom Maps Integration</h3>
+            <p className="text-sm text-gray-400">Connect to TomTom for traffic, directions, and POI searches</p>
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-300 mb-2">
+            <Key className="w-4 h-4 inline mr-2" />
+            TomTom API Key
+          </label>
+          <div className="relative">
+            <input
+              type={showPasswords['tomtom_api_key'] ? 'text' : 'password'}
+              value={config.tomtom_api_key || ''}
+              onChange={(e) => handleChange('tomtom_api_key', e.target.value)}
+              className="w-full px-4 py-2 pr-10 bg-gray-800 border border-gray-700 rounded-lg text-gray-200 focus:outline-none focus:border-green-500 font-mono text-sm"
+              placeholder="Your TomTom API key"
+            />
+            <button
+              type="button"
+              onClick={() => togglePasswordVisibility('tomtom_api_key')}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-200"
+            >
+              {showPasswords['tomtom_api_key'] ? (
+                <EyeOff className="w-4 h-4" />
+              ) : (
+                <Eye className="w-4 h-4" />
+              )}
+            </button>
+          </div>
+          <p className="text-xs text-gray-500 mt-1">
+            Get your free API key at <a href="https://developer.tomtom.com/" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">developer.tomtom.com</a>. The AI will be able to provide traffic updates, directions, and find points of interest.
           </p>
         </div>
       </div>

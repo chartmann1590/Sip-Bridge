@@ -66,6 +66,9 @@ class Config:
     # OpenWeatherMap API
     OPENWEATHER_API_KEY: str = os.getenv('OPENWEATHER_API_KEY', '')
 
+    # TomTom API
+    TOMTOM_API_KEY: str = os.getenv('TOMTOM_API_KEY', '')
+
     @classmethod
     def ensure_data_dir(cls) -> None:
         """Ensure data directory exists."""
@@ -73,7 +76,7 @@ class Config:
     
     @classmethod
     def to_dict(cls) -> dict:
-        """Return configuration as dictionary (excluding sensitive data)."""
+        """Return configuration as dictionary."""
         return {
             'sip_host': cls.SIP_HOST,
             'sip_port': cls.SIP_PORT,
@@ -82,19 +85,24 @@ class Config:
             'ollama_url': cls.OLLAMA_URL,
             'ollama_model': cls.OLLAMA_MODEL,
             'tts_url': cls.TTS_URL,
+            'tts_api_key': cls.TTS_API_KEY,
             'tts_voice': cls.TTS_VOICE,
+            'groq_api_key': cls.GROQ_API_KEY,
             'timezone': cls.TIMEZONE,
             'bot_persona': cls.BOT_PERSONA,
             'calendar_url': cls.CALENDAR_URL,
             'email_address': cls.EMAIL_ADDRESS,
             'email_imap_server': cls.EMAIL_IMAP_SERVER,
             'email_imap_port': cls.EMAIL_IMAP_PORT,
+            'openweather_api_key': cls.OPENWEATHER_API_KEY,
+            'tomtom_api_key': cls.TOMTOM_API_KEY,
             'web_port': cls.WEB_PORT,
             'api_port': cls.API_PORT,
             'has_groq_key': bool(cls.GROQ_API_KEY),
             'has_tts_key': bool(cls.TTS_API_KEY),
             'has_email_password': bool(cls.EMAIL_APP_PASSWORD),
             'has_weather_key': bool(cls.OPENWEATHER_API_KEY),
+            'has_tomtom_key': bool(cls.TOMTOM_API_KEY),
         }
     
     @classmethod
@@ -138,6 +146,8 @@ class Config:
             cls.EMAIL_IMAP_PORT = int(data['email_imap_port'])
         if 'openweather_api_key' in data:
             cls.OPENWEATHER_API_KEY = data['openweather_api_key']
+        if 'tomtom_api_key' in data:
+            cls.TOMTOM_API_KEY = data['tomtom_api_key']
 
 
 # Initialize data directory

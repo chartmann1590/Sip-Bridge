@@ -15,8 +15,12 @@ import {
 import { formatTime, formatDate, setTimezone } from '../utils/timezone';
 import { CalendarCard } from './CalendarCard';
 import { EmailCard } from './EmailCard';
+import { WeatherCard } from './WeatherCard';
+import { TomTomCard } from './TomTomCard';
 import { EventModal } from './EventModal';
 import { EmailModal } from './EmailModal';
+import { WeatherModal } from './WeatherModal';
+import { TomTomModal } from './TomTomModal';
 import { Message as WSMessage } from '../hooks/useWebSocket';
 
 interface CalendarRef {
@@ -46,6 +50,46 @@ interface EmailRef {
   };
 }
 
+interface WeatherRef {
+  ref_index: number;
+  weather: {
+    id: number;
+    location: string;
+    country?: string;
+    temperature: number;
+    feels_like?: number;
+    temp_min?: number;
+    temp_max?: number;
+    humidity?: number;
+    pressure?: number;
+    description: string;
+    main: string;
+    wind_speed?: number;
+    wind_deg?: number;
+    clouds?: number;
+    visibility?: number;
+    units: string;
+    fetched_at?: string;
+  };
+}
+
+interface TomTomRef {
+  ref_index: number;
+  tomtom: {
+    id: number;
+    data_type: 'directions' | 'traffic' | 'poi';
+    query?: string;
+    location?: string;
+    origin?: string;
+    destination?: string;
+    distance_miles?: number;
+    travel_time_minutes?: number;
+    incident_count?: number;
+    result_data?: any;
+    fetched_at?: string;
+  };
+}
+
 interface Message {
   id?: number;
   conversation_id?: number;
@@ -55,6 +99,8 @@ interface Message {
   call_id?: string;
   calendar_refs?: CalendarRef[];
   email_refs?: EmailRef[];
+  weather_refs?: WeatherRef[];
+  tomtom_refs?: TomTomRef[];
   model?: string;
 }
 
@@ -89,9 +135,11 @@ export function ConversationLog({ websocket }: ConversationLogProps) {
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const [timezone, setTimezoneState] = useState<string>('UTC');
 
-  // Modal state for calendar/email cards
+  // Modal state for calendar/email/weather/tomtom cards
   const [selectedEvent, setSelectedEvent] = useState<CalendarRef['event'] | null>(null);
   const [selectedEmail, setSelectedEmail] = useState<EmailRef['email'] | null>(null);
+  const [selectedWeather, setSelectedWeather] = useState<WeatherRef['weather'] | null>(null);
+  const [selectedTomTom, setSelectedTomTom] = useState<TomTomRef['tomtom'] | null>(null);
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
@@ -248,6 +296,8 @@ export function ConversationLog({ websocket }: ConversationLogProps) {
             model: m.model,
             calendar_refs: m.calendar_refs,
             email_refs: m.email_refs,
+            weather_refs: m.weather_refs,
+            tomtom_refs: m.tomtom_refs,
           }));
 
         if (newMessages.length > 0) {
@@ -290,22 +340,26 @@ export function ConversationLog({ websocket }: ConversationLogProps) {
 
   // Clean message content by removing markers
   function cleanMessageContent(content: string): string {
-    return content.replace(/(\[CALENDAR:(\d+)\]|\[EMAIL:(\d+)\])/g, '').trim();
+    return content.replace(/(\[CALENDAR:(\d+)\]|\[EMAIL:(\d+)\]|\[WEATHER:(\d+)\]|\[TOMTOM:(\d+)\])/g, '').trim();
   }
 
   // Extract attachments from message content
   function extractAttachments(
     content: string,
     calendarRefs: CalendarRef[] = [],
-    emailRefs: EmailRef[] = []
+    emailRefs: EmailRef[] = [],
+    weatherRefs: WeatherRef[] = [],
+    tomtomRefs: TomTomRef[] = []
   ): React.ReactNode[] {
     const attachments: React.ReactNode[] = [];
-    const markerRegex = /(\[CALENDAR:(\d+)\]|\[EMAIL:(\d+)\])/g;
+    const markerRegex = /(\[CALENDAR:(\d+)\]|\[EMAIL:(\d+)\]|\[WEATHER:(\d+)\]|\[TOMTOM:(\d+)\])/g;
     let match;
 
     while ((match = markerRegex.exec(content)) !== null) {
       const calendarIndex = match[2];
       const emailIndex = match[3];
+      const weatherIndex = match[4];
+      const tomtomIndex = match[5];
 
       if (calendarIndex !== undefined) {
         // Calendar marker
@@ -334,6 +388,34 @@ export function ConversationLog({ websocket }: ConversationLogProps) {
               email={ref.email}
               timezone={timezone}
               onClick={() => setSelectedEmail(ref.email)}
+            />
+          );
+        }
+      } else if (weatherIndex !== undefined) {
+        // Weather marker
+        const idx = parseInt(weatherIndex, 10);
+        const ref = weatherRefs.find(r => r.ref_index === idx);
+
+        if (ref) {
+          attachments.push(
+            <WeatherCard
+              key={`weather-${idx}-${match.index}`}
+              weather={ref.weather}
+              onClick={() => setSelectedWeather(ref.weather)}
+            />
+          );
+        }
+      } else if (tomtomIndex !== undefined) {
+        // TomTom marker
+        const idx = parseInt(tomtomIndex, 10);
+        const ref = tomtomRefs.find(r => r.ref_index === idx);
+
+        if (ref) {
+          attachments.push(
+            <TomTomCard
+              key={`tomtom-${idx}-${match.index}`}
+              tomtom={ref.tomtom}
+              onClick={() => setSelectedTomTom(ref.tomtom)}
             />
           );
         }
@@ -389,6 +471,8 @@ export function ConversationLog({ websocket }: ConversationLogProps) {
           model: m.model,
           calendar_refs: m.calendar_refs,
           email_refs: m.email_refs,
+          weather_refs: m.weather_refs,
+          tomtom_refs: m.tomtom_refs,
         }))
         .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
       : [];
@@ -657,9 +741,9 @@ export function ConversationLog({ websocket }: ConversationLogProps) {
                       </div>
 
                       {/* Render attachments below the bubble */}
-                      {(msg.calendar_refs?.length || msg.email_refs?.length) ? (
+                      {(msg.calendar_refs?.length || msg.email_refs?.length || msg.weather_refs?.length || msg.tomtom_refs?.length) ? (
                         <div className={`mt-2 flex flex-wrap gap-2 ${msg.role === 'assistant' ? 'justify-start' : 'justify-end'}`}>
-                          {extractAttachments(msg.content, msg.calendar_refs, msg.email_refs)}
+                          {extractAttachments(msg.content, msg.calendar_refs, msg.email_refs, msg.weather_refs, msg.tomtom_refs)}
                         </div>
                       ) : null}
 
@@ -676,7 +760,7 @@ export function ConversationLog({ websocket }: ConversationLogProps) {
         </div>
       </div>
 
-      {/* Modals for calendar events and emails */}
+      {/* Modals for calendar events, emails, and weather */}
       {selectedEvent && (
         <EventModal
           event={selectedEvent}
@@ -690,6 +774,20 @@ export function ConversationLog({ websocket }: ConversationLogProps) {
           email={selectedEmail}
           timezone={timezone}
           onClose={() => setSelectedEmail(null)}
+        />
+      )}
+
+      {selectedWeather && (
+        <WeatherModal
+          weather={selectedWeather}
+          onClose={() => setSelectedWeather(null)}
+        />
+      )}
+
+      {selectedTomTom && (
+        <TomTomModal
+          tomtom={selectedTomTom}
+          onClose={() => setSelectedTomTom(null)}
         />
       )}
     </div>

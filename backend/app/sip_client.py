@@ -27,6 +27,7 @@ from .tts_client import tts_client
 from .calendar_client import calendar_client
 from .email_client import email_client
 from .weather_client import weather_client
+from .tomtom_client import tomtom_client
 
 from pathlib import Path
 from datetime import datetime, timezone, timedelta
@@ -717,7 +718,7 @@ class CallSession:
                         rms = audioop.rms(pcm_8k, 2)
                         self.rms_samples.append(rms)
                         if packet_count % 200 == 1:
-                            avg_rms = sum(self.rms_samples[-200:]) / min(len(self.rms_samples), 200)
+                            avg_rms = sum(list(self.rms_samples)[-200:]) / min(len(self.rms_samples), 200)
                             logger.debug(f"Audio muted (bot speaking) - RMS: {rms}, Avg: {avg_rms:.1f}")
                         continue
                     
@@ -748,7 +749,7 @@ class CallSession:
                     
                     # Log RMS levels for debugging
                     if packet_count % 50 == 1:
-                        avg_rms = sum(self.rms_samples[-200:]) / min(len(self.rms_samples), 200)
+                        avg_rms = sum(list(self.rms_samples)[-200:]) / min(len(self.rms_samples), 200)
                         status = "CALIBRATING" if (self.adaptive_threshold and not self.baseline_collected) else "ACTIVE"
                         logger.info(f"Audio [{status}] - RMS: {rms}, Avg: {avg_rms:.1f}, Max: {self.max_rms}, Threshold: {self.voice_threshold}")
                     
@@ -816,14 +817,16 @@ class CallSession:
         logger.info("RTP receive loop stopped")
         self.stop()
 
-    def _build_system_context(self, user_text: str) -> tuple[list, list, list]:
+    def _build_system_context(self, user_text: str) -> tuple[list, list, list, list, list]:
         """
         Build system prompt and context for LLM.
-        Returns: (messages, calendar_event_ids, email_ids)
+        Returns: (messages, calendar_event_ids, email_ids, weather_data_list, tomtom_data_list)
         """
         messages = []
         calendar_event_ids = []
         email_ids = []
+        weather_data_list = []
+        tomtom_data_list = []
         
         # Base Persona
         persona = Config.BOT_PERSONA
@@ -910,8 +913,21 @@ class CallSession:
                     weather_data = weather_client.get_weather(location, units="imperial")
 
                     if weather_data:
-                        weather_text = weather_client.format_weather_for_voice(weather_data)
-                        persona = f"{persona}\n\nCurrent weather information:\n{weather_text}"
+                        # Store weather data for database reference
+                        weather_data_list.append(weather_data)
+
+                        # Format weather info with marker
+                        units_symbol = "°F" if weather_data.get("units") == "imperial" else "°C"
+                        weather_info = f"\n\nWeather data [WEATHER:0]:"
+                        weather_info += f"\n- Location: {weather_data['location']}, {weather_data.get('country', '')}"
+                        weather_info += f"\n- Temperature: {weather_data['temperature']}{units_symbol}"
+                        weather_info += f"\n- Feels like: {weather_data.get('feels_like')}{units_symbol}"
+                        weather_info += f"\n- Conditions: {weather_data['description']}"
+                        weather_info += f"\n- Humidity: {weather_data.get('humidity')}%"
+                        if weather_data.get('wind_speed'):
+                            weather_info += f"\n- Wind speed: {weather_data['wind_speed']} mph"
+
+                        persona = f"{persona}{weather_info}"
                         logger.info(f"Added weather for {location} to context: {weather_data['temperature']}°F, {weather_data['description']}")
                     else:
                         persona = f"{persona}\n\nNote: Could not fetch weather for '{location}'. The location might not be found or the API key might be invalid. Ask the user to provide a valid city name."
@@ -921,6 +937,135 @@ class CallSession:
 
             except Exception as e:
                 logger.warning(f"Could not fetch weather: {e}")
+
+        # 2.75. Add TomTom context (on-demand for traffic, directions, POI)
+        tomtom_keywords = {
+            'directions': ['directions', 'route', 'drive', 'navigate', 'how do i get', 'how to get'],
+            'traffic': ['traffic', 'congestion', 'delays', 'accidents', 'incidents'],
+            'poi': ['find', 'nearest', 'nearby', 'restaurants', 'gas station', 'hotel', 'cafe', 'coffee', 'food', 'atm', 'pharmacy']
+        }
+
+        is_asking_tomtom = False
+        tomtom_type = None
+
+        for tt_type, keywords in tomtom_keywords.items():
+            if any(keyword in user_text.lower() for keyword in keywords):
+                is_asking_tomtom = True
+                tomtom_type = tt_type
+                break
+
+        if is_asking_tomtom and Config.TOMTOM_API_KEY:
+            try:
+                import re
+
+                tomtom_data = None
+
+                if tomtom_type == 'directions':
+                    # Extract origin and destination
+                    # Patterns: "directions from X to Y", "how do I get from X to Y", "navigate from X to Y"
+                    patterns = [
+                        r'(?:directions|route|drive|navigate|get)\s+from\s+([^to]+?)\s+to\s+(.+?)(?:\?|$)',
+                        r'(?:how do i get|how to get)\s+from\s+([^to]+?)\s+to\s+(.+?)(?:\?|$)',
+                    ]
+
+                    origin = None
+                    destination = None
+
+                    for pattern in patterns:
+                        match = re.search(pattern, user_text.lower())
+                        if match:
+                            origin = match.group(1).strip()
+                            destination = match.group(2).strip()
+                            break
+
+                    if origin and destination:
+                        tomtom_data = tomtom_client.get_directions(origin, destination)
+                        if tomtom_data:
+                            tomtom_data_list.append(tomtom_data)
+                            dist_miles = tomtom_data.get('distance_miles', 0)
+                            time_min = tomtom_data.get('travel_time_minutes', 0)
+
+                            persona += f"\n\nDirections [TOMTOM:0]:"
+                            persona += f"\n- From: {origin}"
+                            persona += f"\n- To: {destination}"
+                            persona += f"\n- Distance: {dist_miles} miles"
+                            persona += f"\n- Travel time: {time_min} minutes"
+
+                            logger.info(f"Added directions from {origin} to {destination}")
+                    else:
+                        persona += f"\n\nNote: User is asking for directions but didn't specify origin and destination. Ask them for both locations."
+
+                elif tomtom_type == 'traffic':
+                    # Extract location for traffic check
+                    patterns = [
+                        r'traffic\s+(?:in|near|around|on)\s+([a-zA-Z\s,]+?)(?:\?|$)',
+                        r'(?:is there|any)\s+traffic\s+(?:in|near|on)\s+([a-zA-Z\s,]+?)(?:\?|$)',
+                        r'traffic.*?(?:like|is).*?(?:in|near|around|on)\s+([a-zA-Z\s,]+?)(?:\?|$)',
+                        r'(?:what|how).*?traffic.*?(?:in|near|around|on)\s+([a-zA-Z\s,]+?)(?:\?|$)',
+                        r'check.*?traffic.*?(?:in|near|around|on)\s+([a-zA-Z\s,]+?)(?:\?|$)',
+                    ]
+
+                    location = None
+
+                    for pattern in patterns:
+                        match = re.search(pattern, user_text.lower())
+                        if match:
+                            location = match.group(1).strip()
+                            break
+
+                    if location:
+                        tomtom_data = tomtom_client.get_traffic_incidents(location, radius_km=10)
+                        if tomtom_data:
+                            tomtom_data_list.append(tomtom_data)
+                            incident_count = tomtom_data.get('incident_count', 0)
+
+                            persona += f"\n\nTraffic information [TOMTOM:0]:"
+                            persona += f"\n- Location: {location}"
+                            persona += f"\n- Incidents found: {incident_count}"
+
+                            if incident_count > 0:
+                                for i, incident in enumerate(tomtom_data.get('incidents', [])[:3], 1):
+                                    persona += f"\n- Incident {i}: {incident['description']} on {incident['road']}"
+
+                            logger.info(f"Added traffic info for {location}: {incident_count} incidents")
+                    else:
+                        persona += f"\n\nNote: User is asking about traffic but didn't specify a location. Ask them where they want to check traffic."
+
+                elif tomtom_type == 'poi':
+                    # Extract POI search query
+                    patterns = [
+                        r'(?:find|nearest|nearby|locate)\s+(?:me\s+)?(?:a\s+)?(?:some\s+)?([a-zA-Z\s]+?)(?:\s+near|\s+in|\s+around|\?|$)',
+                        r'where (?:is|are|can i find)\s+(?:the\s+)?(?:nearest|closest|a|some)?\s*([a-zA-Z\s]+?)(?:\s+near|\s+in|\?|$)',
+                        r'(?:looking for|search for|need)\s+(?:a\s+)?(?:some\s+)?([a-zA-Z\s]+?)(?:\s+near|\s+in|\s+around|\?|$)',
+                    ]
+
+                    poi_query = None
+
+                    for pattern in patterns:
+                        match = re.search(pattern, user_text.lower())
+                        if match:
+                            poi_query = match.group(1).strip()
+                            break
+
+                    if poi_query:
+                        tomtom_data = tomtom_client.search_poi(poi_query, limit=5)
+                        if tomtom_data:
+                            tomtom_data_list.append(tomtom_data)
+                            results = tomtom_data.get('results', [])
+
+                            persona += f"\n\nPoints of Interest [TOMTOM:0]:"
+                            persona += f"\n- Search: {poi_query}"
+                            persona += f"\n- Results found: {len(results)}"
+
+                            for i, poi in enumerate(results[:3], 1):
+                                persona += f"\n- {i}. {poi['name']} - {poi['address']}"
+
+                            logger.info(f"Added POI search for '{poi_query}': {len(results)} results")
+                    else:
+                        persona += f"\n\nNote: User is searching for a place but query is unclear. Ask them what they're looking for."
+
+            except Exception as e:
+                logger.warning(f"Could not fetch TomTom data: {e}")
 
         # 3. Add calendar context
         if Config.CALENDAR_URL:
@@ -938,20 +1083,22 @@ class CallSession:
                 logger.warning(f"Could not fetch calendar events: {e}")
 
         # 4. Add marker instructions if needed
-        if calendar_event_ids or email_ids:
+        if calendar_event_ids or email_ids or weather_data_list or tomtom_data_list:
             persona += """
 
-IMPORTANT: When referring to specific calendar events or emails, use these markers:
+IMPORTANT: When referring to specific calendar events, emails, weather data, or TomTom results, use these markers:
 - For calendar events: [CALENDAR:0], [CALENDAR:1], etc. (matching the indices shown above)
 - For emails: [EMAIL:0], [EMAIL:1], etc. (matching the indices shown above)
+- For weather data: [WEATHER:0], [WEATHER:1], etc. (matching the indices shown above)
+- For TomTom data: [TOMTOM:0], [TOMTOM:1], etc. (matching the indices shown above)
 
-Example: "You have a meeting tomorrow [CALENDAR:0] and an email from John [EMAIL:0]."
+Example: "You have a meeting tomorrow [CALENDAR:0] and an email from John [EMAIL:0]. The weather in New York is sunny [WEATHER:0]. The route to Boston is 200 miles [TOMTOM:0]."
 
-Only use markers for events/emails explicitly listed above. Do not hallucinate markers."""
+Only use markers for events/emails/weather/TomTom data explicitly listed above. Do not hallucinate markers."""
 
         messages.append({'role': 'system', 'content': persona})
-        
-        return messages, calendar_event_ids, email_ids
+
+        return messages, calendar_event_ids, email_ids, weather_data_list, tomtom_data_list
     
     def _process_utterance(self, chunks_8k: list) -> None:
         """Process recorded audio through AI pipeline."""
@@ -1046,7 +1193,7 @@ Only use markers for events/emails explicitly listed above. Do not hallucinate m
 
             try:
                 # Build system context with unconditional date/time
-                conversation_messages, calendar_event_ids, email_ids = self._build_system_context(text)
+                conversation_messages, calendar_event_ids, email_ids, weather_data_list, tomtom_data_list = self._build_system_context(text)
 
                 if self.call_state and self.call_state.conversation_id:
                     messages = db.get_messages(self.call_state.conversation_id)
@@ -1070,13 +1217,35 @@ Only use markers for events/emails explicitly listed above. Do not hallucinate m
                 self.stop_thinking = True
                 thinking_thread.join(timeout=1.0)
 
+            # Store weather data in database
+            weather_data_ids = []
+            for weather_data in weather_data_list:
+                try:
+                    weather_id = db.add_weather_data(weather_data)
+                    if weather_id:
+                        weather_data_ids.append(weather_id)
+                        logger.info(f"Stored weather data for {weather_data['location']}: ID {weather_id}")
+                except Exception as e:
+                    logger.error(f"Failed to store weather data: {e}")
+
+            # Store TomTom data in database
+            tomtom_data_ids = []
+            for tomtom_data in tomtom_data_list:
+                try:
+                    tomtom_id = db.add_tomtom_data(tomtom_data)
+                    if tomtom_id:
+                        tomtom_data_ids.append(tomtom_id)
+                        logger.info(f"Stored TomTom data ({tomtom_data['type']}): ID {tomtom_id}")
+                except Exception as e:
+                    logger.error(f"Failed to store TomTom data: {e}")
+
             # Save assistant message and parse markers for references
             if self.call_state and self.call_state.conversation_id:
                 # Save message first to get message_id
                 saved_message = db.add_message(self.call_state.conversation_id, 'assistant', response, model=model)
 
                 # Parse AI response for markers and create reference records
-                if saved_message and (calendar_event_ids or email_ids):
+                if saved_message and (calendar_event_ids or email_ids or weather_data_ids or tomtom_data_ids):
                     try:
                         # Extract calendar markers [CALENDAR:N]
                         calendar_markers = re.findall(r'\[CALENDAR:(\d+)\]', response)
@@ -1105,22 +1274,56 @@ Only use markers for events/emails explicitly listed above. Do not hallucinate m
                                 logger.info(f"Created email reference: message={saved_message.id}, email={email_ids[marker_index]}, index={marker_index}")
                             else:
                                 logger.warning(f"AI used invalid email marker index: {marker_index} (max: {len(email_ids) - 1})")
+
+                        # Extract weather markers [WEATHER:N]
+                        weather_markers = re.findall(r'\[WEATHER:(\d+)\]', response)
+                        for marker_index_str in weather_markers:
+                            marker_index = int(marker_index_str)
+                            if marker_index < len(weather_data_ids):
+                                db.add_weather_ref(
+                                    saved_message.id,
+                                    weather_data_ids[marker_index],
+                                    marker_index
+                                )
+                                logger.info(f"Created weather reference: message={saved_message.id}, weather={weather_data_ids[marker_index]}, index={marker_index}")
+                            else:
+                                logger.warning(f"AI used invalid weather marker index: {marker_index} (max: {len(weather_data_ids) - 1})")
+
+                        # Extract TomTom markers [TOMTOM:N]
+                        tomtom_markers = re.findall(r'\[TOMTOM:(\d+)\]', response)
+                        for marker_index_str in tomtom_markers:
+                            marker_index = int(marker_index_str)
+                            if marker_index < len(tomtom_data_ids):
+                                db.add_tomtom_ref(
+                                    saved_message.id,
+                                    tomtom_data_ids[marker_index],
+                                    marker_index
+                                )
+                                logger.info(f"Created TomTom reference: message={saved_message.id}, tomtom={tomtom_data_ids[marker_index]}, index={marker_index}")
+                            else:
+                                logger.warning(f"AI used invalid TomTom marker index: {marker_index} (max: {len(tomtom_data_ids) - 1})")
                     except Exception as e:
                         logger.error(f"Error creating message references: {e}", exc_info=True)
 
                 # Fetch full message with refs for broadcasting
                 calendar_refs_data = None
                 email_refs_data = None
-                if saved_message and (calendar_event_ids or email_ids):
+                weather_refs_data = None
+                tomtom_refs_data = None
+                if saved_message and (calendar_event_ids or email_ids or weather_data_ids or tomtom_data_ids):
                     full_message = db.get_message_with_refs(saved_message.id)
                     if full_message:
                         calendar_refs_data = full_message.get('calendar_refs', [])
                         email_refs_data = full_message.get('email_refs', [])
+                        weather_refs_data = full_message.get('weather_refs', [])
+                        tomtom_refs_data = full_message.get('tomtom_refs', [])
 
                 ws_manager.broadcast_message(
                     self.call_state.conversation_id, 'assistant', response, call_id,
                     calendar_refs=calendar_refs_data,
                     email_refs=email_refs_data,
+                    weather_refs=weather_refs_data,
+                    tomtom_refs=tomtom_refs_data,
                     model=model
                 )
             

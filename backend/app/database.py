@@ -234,6 +234,106 @@ class MessageEmailRef(Base):
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
+class WeatherData(Base):
+    """Model for storing weather data from OpenWeatherMap."""
+    __tablename__ = 'weather_data'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    location = Column(String(255), nullable=False)
+    country = Column(String(10), nullable=True)
+    temperature = Column(Float, nullable=False)
+    feels_like = Column(Float, nullable=True)
+    temp_min = Column(Float, nullable=True)
+    temp_max = Column(Float, nullable=True)
+    humidity = Column(Integer, nullable=True)
+    pressure = Column(Integer, nullable=True)
+    description = Column(String(255), nullable=False)
+    main = Column(String(100), nullable=False)  # Weather category (Clear, Clouds, Rain, etc.)
+    wind_speed = Column(Float, nullable=True)
+    wind_deg = Column(Integer, nullable=True)
+    clouds = Column(Integer, nullable=True)  # Cloud coverage percentage
+    visibility = Column(Integer, nullable=True)  # Visibility in meters
+    units = Column(String(20), default='imperial')  # imperial, metric, standard
+    fetched_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            'id': self.id,
+            'location': self.location,
+            'country': self.country,
+            'temperature': self.temperature,
+            'feels_like': self.feels_like,
+            'temp_min': self.temp_min,
+            'temp_max': self.temp_max,
+            'humidity': self.humidity,
+            'pressure': self.pressure,
+            'description': self.description,
+            'main': self.main,
+            'wind_speed': self.wind_speed,
+            'wind_deg': self.wind_deg,
+            'clouds': self.clouds,
+            'visibility': self.visibility,
+            'units': self.units,
+            'fetched_at': self.fetched_at.isoformat() if self.fetched_at else None,
+        }
+
+
+class MessageWeatherRef(Base):
+    """Model for linking messages to weather data."""
+    __tablename__ = 'message_weather_refs'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    message_id = Column(Integer, nullable=False, index=True)
+    weather_data_id = Column(Integer, nullable=False, index=True)
+    ref_index = Column(Integer, nullable=False)  # Position in message (0, 1, 2...)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+class TomTomData(Base):
+    """Model for storing TomTom API results (POI, directions, traffic)."""
+    __tablename__ = 'tomtom_data'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    data_type = Column(String(50), nullable=False)  # 'poi', 'directions', 'traffic'
+    query = Column(Text, nullable=False)  # Original query
+    result_data = Column(Text, nullable=False)  # JSON-serialized result
+    location = Column(String(255), nullable=True)  # Primary location
+    origin = Column(String(255), nullable=True)  # For directions
+    destination = Column(String(255), nullable=True)  # For directions
+    distance_miles = Column(Float, nullable=True)  # For directions
+    travel_time_minutes = Column(Integer, nullable=True)  # For directions
+    incident_count = Column(Integer, nullable=True)  # For traffic
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    fetched_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            'id': self.id,
+            'data_type': self.data_type,
+            'query': self.query,
+            'result_data': json.loads(self.result_data) if self.result_data else {},
+            'location': self.location,
+            'origin': self.origin,
+            'destination': self.destination,
+            'distance_miles': self.distance_miles,
+            'travel_time_minutes': self.travel_time_minutes,
+            'incident_count': self.incident_count,
+            'fetched_at': self.fetched_at.isoformat() if self.fetched_at else None,
+        }
+
+
+class MessageTomTomRef(Base):
+    """Model for linking messages to TomTom data."""
+    __tablename__ = 'message_tomtom_refs'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    message_id = Column(Integer, nullable=False, index=True)
+    tomtom_data_id = Column(Integer, nullable=False, index=True)
+    ref_index = Column(Integer, nullable=False)  # Position in message (0, 1, 2...)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
 class Database:
     """Database manager for SIP AI Bridge."""
     
@@ -738,6 +838,84 @@ class Database:
                 session.add(ref)
                 session.commit()
 
+    def add_weather_data(self, weather_dict: Dict[str, Any]) -> Optional[int]:
+        """Store weather data and return its ID."""
+        with self.get_session() as session:
+            weather = WeatherData(
+                location=weather_dict.get('location', ''),
+                country=weather_dict.get('country', ''),
+                temperature=weather_dict.get('temperature', 0.0),
+                feels_like=weather_dict.get('feels_like'),
+                temp_min=weather_dict.get('temp_min'),
+                temp_max=weather_dict.get('temp_max'),
+                humidity=weather_dict.get('humidity'),
+                pressure=weather_dict.get('pressure'),
+                description=weather_dict.get('description', ''),
+                main=weather_dict.get('main', ''),
+                wind_speed=weather_dict.get('wind_speed'),
+                wind_deg=weather_dict.get('wind_deg'),
+                clouds=weather_dict.get('clouds'),
+                visibility=weather_dict.get('visibility'),
+                units=weather_dict.get('units', 'imperial')
+            )
+            session.add(weather)
+            session.commit()
+            session.refresh(weather)
+            return weather.id
+
+    def add_weather_ref(self, message_id: int, weather_data_id: int, ref_index: int) -> None:
+        """Link a message to weather data."""
+        with self.get_session() as session:
+            # Check if reference already exists
+            existing = session.query(MessageWeatherRef)\
+                .filter_by(message_id=message_id, ref_index=ref_index)\
+                .first()
+
+            if not existing:
+                ref = MessageWeatherRef(
+                    message_id=message_id,
+                    weather_data_id=weather_data_id,
+                    ref_index=ref_index
+                )
+                session.add(ref)
+                session.commit()
+
+    def add_tomtom_data(self, tomtom_dict: Dict[str, Any]) -> Optional[int]:
+        """Store TomTom API result and return its ID."""
+        with self.get_session() as session:
+            tomtom = TomTomData(
+                data_type=tomtom_dict.get('type', ''),
+                query=tomtom_dict.get('query', ''),
+                result_data=json.dumps(tomtom_dict),  # Store full result as JSON
+                location=tomtom_dict.get('location'),
+                origin=tomtom_dict.get('origin'),
+                destination=tomtom_dict.get('destination'),
+                distance_miles=tomtom_dict.get('distance_miles'),
+                travel_time_minutes=tomtom_dict.get('travel_time_minutes'),
+                incident_count=tomtom_dict.get('incident_count')
+            )
+            session.add(tomtom)
+            session.commit()
+            session.refresh(tomtom)
+            return tomtom.id
+
+    def add_tomtom_ref(self, message_id: int, tomtom_data_id: int, ref_index: int) -> None:
+        """Link a message to TomTom data."""
+        with self.get_session() as session:
+            # Check if reference already exists
+            existing = session.query(MessageTomTomRef)\
+                .filter_by(message_id=message_id, ref_index=ref_index)\
+                .first()
+
+            if not existing:
+                ref = MessageTomTomRef(
+                    message_id=message_id,
+                    tomtom_data_id=tomtom_data_id,
+                    ref_index=ref_index
+                )
+                session.add(ref)
+                session.commit()
+
     def get_message_with_refs(self, message_id: int) -> Optional[Dict[str, Any]]:
         """Get a message with all its calendar and email references populated."""
         with self.get_session() as session:
@@ -775,10 +953,42 @@ class Database:
                         'email': email.to_dict()
                     })
 
+            # Get weather references
+            weather_refs = []
+            weather_refs_query = session.query(MessageWeatherRef)\
+                .filter_by(message_id=message_id)\
+                .order_by(MessageWeatherRef.ref_index)\
+                .all()
+
+            for ref in weather_refs_query:
+                weather = session.query(WeatherData).filter_by(id=ref.weather_data_id).first()
+                if weather:
+                    weather_refs.append({
+                        'ref_index': ref.ref_index,
+                        'weather': weather.to_dict()
+                    })
+
+            # Get TomTom references
+            tomtom_refs = []
+            tomtom_refs_query = session.query(MessageTomTomRef)\
+                .filter_by(message_id=message_id)\
+                .order_by(MessageTomTomRef.ref_index)\
+                .all()
+
+            for ref in tomtom_refs_query:
+                tomtom = session.query(TomTomData).filter_by(id=ref.tomtom_data_id).first()
+                if tomtom:
+                    tomtom_refs.append({
+                        'ref_index': ref.ref_index,
+                        'tomtom': tomtom.to_dict()
+                    })
+
             # Build complete message dict
             result = message.to_dict()
             result['calendar_refs'] = calendar_refs
             result['email_refs'] = email_refs
+            result['weather_refs'] = weather_refs
+            result['tomtom_refs'] = tomtom_refs
 
             return result
 

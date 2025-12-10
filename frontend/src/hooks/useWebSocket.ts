@@ -18,6 +18,8 @@ export interface Message {
   model?: string;
   calendar_refs?: any[]; // Using any[] for now to avoid circular deps or complex type exports, or I can define the types here.
   email_refs?: any[];
+  weather_refs?: any[];
+  tomtom_refs?: any[];
 }
 
 export interface LogEntry {
