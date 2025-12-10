@@ -3,10 +3,13 @@ import io
 import asyncio
 from typing import Optional, Tuple
 import edge_tts
+import logging
 
 from .config import Config
 from .database import db
 from .websocket import ws_manager
+
+logger = logging.getLogger(__name__)
 
 
 class TTSClient:
@@ -41,32 +44,55 @@ class TTSClient:
         if not text:
             return None, "Empty input text"
 
-        try:
-            voice_to_use = voice or self.voice
+        voice_to_use = voice or self.voice
 
-            db.add_log('info', 'tts_request', f'Synthesizing with {voice_to_use}: {text[:100]}...', call_id)
+        # Try up to 3 times with different strategies
+        for attempt in range(3):
+            try:
+                db.add_log('info', 'tts_request', f'Synthesizing with {voice_to_use} (attempt {attempt + 1}): {text[:100]}...', call_id)
 
-            # Create communicate object
-            communicate = edge_tts.Communicate(text, voice_to_use)
+                # Create communicate object
+                communicate = edge_tts.Communicate(text, voice_to_use)
 
-            # Collect audio data
-            audio_data = b''
-            async for chunk in communicate.stream():
-                if chunk["type"] == "audio":
-                    audio_data += chunk["data"]
+                # Collect audio data
+                audio_data = b''
+                async for chunk in communicate.stream():
+                    if chunk["type"] == "audio":
+                        audio_data += chunk["data"]
 
-            if audio_data:
-                db.add_log('info', 'tts_success', f'Generated {len(audio_data)} bytes of audio', call_id)
-                return audio_data, None
-            else:
-                error = "No audio data generated"
-                db.add_log('error', 'tts_failed', error, call_id)
-                return None, error
+                if audio_data:
+                    db.add_log('info', 'tts_success', f'Generated {len(audio_data)} bytes of audio', call_id)
+                    return audio_data, None
+                else:
+                    logger.warning(f"No audio data generated on attempt {attempt + 1}")
+                    if attempt < 2:
+                        await asyncio.sleep(1)  # Wait before retry
+                        continue
 
-        except Exception as e:
-            error = f"TTS error: {str(e)}"
-            db.add_log('error', 'tts_failed', error, call_id)
-            return None, error
+                    error = "No audio data generated after retries"
+                    db.add_log('error', 'tts_failed', error, call_id)
+                    return None, error
+
+            except Exception as e:
+                error_msg = str(e)
+                logger.error(f"TTS attempt {attempt + 1} failed: {error_msg}")
+
+                # If this is a 403 or connection error and we have more attempts, try again
+                if attempt < 2 and ('403' in error_msg or 'Invalid response status' in error_msg):
+                    logger.info(f"Retrying TTS after error (attempt {attempt + 1}/3)")
+                    await asyncio.sleep(2)  # Wait longer before retry
+                    continue
+
+                # On final attempt, return the error
+                if attempt == 2:
+                    error = f"TTS error after 3 attempts: {error_msg}"
+                    db.add_log('error', 'tts_failed', error, call_id)
+                    return None, error
+
+        # Should not reach here, but just in case
+        error = "TTS failed: exceeded retry attempts"
+        db.add_log('error', 'tts_failed', error, call_id)
+        return None, error
 
     def synthesize_sync(self, text: str, call_id: Optional[str] = None,
                         voice: Optional[str] = None) -> Tuple[Optional[bytes], Optional[str]]:
@@ -96,6 +122,7 @@ class TTSClient:
         except Exception as e:
             error = f"TTS sync error: {str(e)}"
             db.add_log('error', 'tts_failed', error, call_id)
+            logger.error(error)
             return None, error
 
     def get_available_voices(self) -> list:

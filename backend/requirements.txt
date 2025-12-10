@@ -22,7 +22,7 @@ httpx==0.25.2
 pydub==0.25.1
 soundfile==0.12.1
 numpy==1.26.2
-edge-tts==6.1.12
+edge-tts>=6.1.18
 
 # Audio processing (audioop is built into Python 3.11)
 
