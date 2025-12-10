@@ -8,14 +8,15 @@ set -e  # Exit on any error
 
 # Git configuration
 GIT_REMOTE="gitea"
+GIT_BRANCH="master"
 GIT_REPO_URL="http://10.0.0.129:3000/charles/Sip-Bridge.git"
 
 echo "🔄 Starting update process for Sip-Bridge..."
 echo "📦 Repository: $GIT_REPO_URL"
 
 # Step 1: Pull from git
-echo "📥 Pulling latest changes from git (remote: $GIT_REMOTE)..."
-git pull $GIT_REMOTE
+echo "📥 Pulling latest changes from git (remote: $GIT_REMOTE, branch: $GIT_BRANCH)..."
+git pull $GIT_REMOTE $GIT_BRANCH
 if [ $? -ne 0 ]; then
     echo "❌ Error: Failed to pull from git"
     exit 1
