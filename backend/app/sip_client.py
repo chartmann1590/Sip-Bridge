@@ -747,8 +747,8 @@ class CallSession:
                             self.baseline_collected = True
                             logger.info(f"Adaptive threshold calibrated: noise_floor={noise_floor}, peak_noise={peak_noise}, threshold={self.voice_threshold}")
                     
-                    # Log RMS levels for debugging
-                    if packet_count % 50 == 1:
+                    # Log RMS levels for debugging (reduced frequency)
+                    if packet_count % 200 == 1:
                         avg_rms = sum(list(self.rms_samples)[-200:]) / min(len(self.rms_samples), 200)
                         status = "CALIBRATING" if (self.adaptive_threshold and not self.baseline_collected) else "ACTIVE"
                         logger.info(f"Audio [{status}] - RMS: {rms}, Avg: {avg_rms:.1f}, Max: {self.max_rms}, Threshold: {self.voice_threshold}")
@@ -1342,6 +1342,9 @@ Only use markers for events/emails/weather/TomTom data explicitly listed above. 
             logger.error(f"Error processing utterance: {e}", exc_info=True)
         finally:
             self.processing = False
+            # Force garbage collection to free memory
+            import gc
+            gc.collect()
     
     def _play_thinking_sound(self) -> None:
         """Play a gentle thinking sound while processing."""
