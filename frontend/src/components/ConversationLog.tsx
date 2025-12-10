@@ -338,9 +338,30 @@ export function ConversationLog({ websocket }: ConversationLogProps) {
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   }
 
-  // Clean message content by removing markers
+  // Clean message content by removing markers - no regex, just simple string replacement
   function cleanMessageContent(content: string): string {
-    return content.replace(/(\[CALENDAR:(\d+)\]|\[EMAIL:(\d+)\]|\[WEATHER:(\d+)\]|\[TOMTOM:(\d+)\])/g, '').trim();
+    let cleaned = content;
+    const markerPrefixes = ['[CALENDAR:', '[EMAIL:', '[WEATHER:', '[TOMTOM:'];
+    
+    // Remove all markers by finding each one and removing it
+    let changed = true;
+    while (changed) {
+      const before = cleaned;
+      
+      for (const prefix of markerPrefixes) {
+        const index = cleaned.indexOf(prefix);
+        if (index !== -1) {
+          const endIndex = cleaned.indexOf(']', index);
+          if (endIndex !== -1) {
+            cleaned = cleaned.slice(0, index) + cleaned.slice(endIndex + 1);
+          }
+        }
+      }
+      
+      changed = cleaned !== before;
+    }
+    
+    return cleaned.trim();
   }
 
   // Render attachments directly from refs arrays - no regex needed!
