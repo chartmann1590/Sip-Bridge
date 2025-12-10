@@ -10,20 +10,8 @@ import threading
 import time
 import logging
 from pathlib import Path
-from flask import Flask, request, jsonify, send_from_directory
-from flask_socketio import SocketIO
-from flask_cors import CORS
 
-from .config import Config
-from .database import db
-from .websocket import ws_manager
-from .transcription import transcriber
-from .gpt_client import gpt_client
-from .tts_client import tts_client
-from .calendar_client import calendar_client
-from .email_client import email_client
-
-# Configure logging
+# Configure logging BEFORE importing modules that use it
 log_dir = Path(__file__).parent.parent.parent / 'logs'
 log_dir.mkdir(parents=True, exist_ok=True)
 logging.basicConfig(
@@ -39,6 +27,20 @@ logging.basicConfig(
 logging.getLogger('geventwebsocket.handler').setLevel(logging.WARNING)
 
 logger = logging.getLogger(__name__)
+
+# Now import modules that use logging
+from flask import Flask, request, jsonify, send_from_directory
+from flask_socketio import SocketIO
+from flask_cors import CORS
+
+from .config import Config
+from .database import db
+from .websocket import ws_manager
+from .transcription import transcriber
+from .gpt_client import gpt_client
+from .tts_client import tts_client
+from .calendar_client import calendar_client
+from .email_client import email_client
 
 # Create Flask app
 app = Flask(__name__, static_folder='../../frontend/dist', static_url_path='')

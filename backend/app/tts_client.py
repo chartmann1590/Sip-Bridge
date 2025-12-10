@@ -5,6 +5,7 @@ from typing import Optional, Tuple
 import edge_tts
 import logging
 import threading
+import sys
 
 from .config import Config
 from .database import db
@@ -22,20 +23,40 @@ class TTSClient:
         self._loop = None
         self._loop_thread = None
         self._lock = threading.Lock()
-        self._start_event_loop()
+        self._initialization_failed = False
+        try:
+            self._start_event_loop()
+        except Exception as e:
+            logger.error(f"Failed to start TTS event loop on init: {e}", exc_info=True)
+            self._initialization_failed = True
 
     def _start_event_loop(self):
         """Start a dedicated event loop in a background thread."""
         def run_loop(loop):
-            asyncio.set_event_loop(loop)
-            loop.run_forever()
+            try:
+                asyncio.set_event_loop(loop)
+                logger.info("TTS event loop thread started, running forever...")
+                loop.run_forever()
+            except Exception as e:
+                logger.error(f"TTS event loop crashed: {e}", exc_info=True)
 
         with self._lock:
             if self._loop is None or self._loop.is_closed():
-                self._loop = asyncio.new_event_loop()
-                self._loop_thread = threading.Thread(target=run_loop, args=(self._loop,), daemon=True)
-                self._loop_thread.start()
-                logger.info("Started dedicated TTS event loop")
+                try:
+                    self._loop = asyncio.new_event_loop()
+                    self._loop_thread = threading.Thread(
+                        target=run_loop,
+                        args=(self._loop,),
+                        daemon=True,
+                        name="TTS-EventLoop"
+                    )
+                    self._loop_thread.start()
+                    logger.info("Started dedicated TTS event loop in background thread")
+                    self._initialization_failed = False
+                except Exception as e:
+                    logger.error(f"Failed to create TTS event loop: {e}", exc_info=True)
+                    self._initialization_failed = True
+                    raise
 
     @property
     def voice(self) -> str:
@@ -68,6 +89,7 @@ class TTSClient:
         for attempt in range(3):
             try:
                 db.add_log('info', 'tts_request', f'Synthesizing with {voice_to_use} (attempt {attempt + 1}): {text[:100]}...', call_id)
+                logger.info(f"TTS synthesize attempt {attempt + 1} for: {text[:50]}...")
 
                 # Create communicate object
                 communicate = edge_tts.Communicate(text, voice_to_use)
@@ -80,6 +102,7 @@ class TTSClient:
 
                 if audio_data:
                     db.add_log('info', 'tts_success', f'Generated {len(audio_data)} bytes of audio', call_id)
+                    logger.info(f"TTS success: Generated {len(audio_data)} bytes")
                     return audio_data, None
                 else:
                     logger.warning(f"No audio data generated on attempt {attempt + 1}")
@@ -93,7 +116,7 @@ class TTSClient:
 
             except Exception as e:
                 error_msg = str(e)
-                logger.error(f"TTS attempt {attempt + 1} failed: {error_msg}")
+                logger.error(f"TTS attempt {attempt + 1} failed: {error_msg}", exc_info=True)
 
                 # If this is a 403 or connection error and we have more attempts, try again
                 if attempt < 2 and ('403' in error_msg or 'Invalid response status' in error_msg):
@@ -129,25 +152,39 @@ class TTSClient:
             return None, "Empty input text"
 
         try:
+            logger.info(f"TTS synthesize_sync called for: {text[:50]}...")
+
             # Ensure event loop is running
-            if self._loop is None or self._loop.is_closed():
-                logger.warning("Event loop was closed, restarting...")
+            if self._loop is None or self._loop.is_closed() or self._initialization_failed:
+                logger.warning("Event loop was closed or failed, restarting...")
                 self._start_event_loop()
+                # Give it a moment to start
+                import time
+                time.sleep(0.1)
+
+            if self._loop is None:
+                error = "Failed to start TTS event loop"
+                logger.error(error)
+                db.add_log('error', 'tts_failed', error, call_id)
+                return None, error
 
             # Schedule the coroutine on the dedicated event loop
+            logger.debug("Scheduling TTS coroutine on event loop...")
             future = asyncio.run_coroutine_threadsafe(
                 self.synthesize(text, call_id, voice),
                 self._loop
             )
 
             # Wait for result with timeout (30 seconds)
+            logger.debug("Waiting for TTS result...")
             result = future.result(timeout=30)
+            logger.info(f"TTS synthesize_sync completed: {result[0] is not None}")
             return result
 
         except Exception as e:
             error = f"TTS sync error: {str(e)}"
             db.add_log('error', 'tts_failed', error, call_id)
-            logger.error(error)
+            logger.error(error, exc_info=True)
             return None, error
 
     def get_available_voices(self) -> list:
@@ -216,10 +253,16 @@ class TTSClient:
             # edge-tts is a local library, so it's always available if imported
             import edge_tts
             # Also check if our event loop is running
-            return self._loop is not None and not self._loop.is_closed()
+            is_healthy = self._loop is not None and not self._loop.is_closed() and not self._initialization_failed
+            if not is_healthy:
+                logger.warning(f"TTS health check failed: loop={self._loop is not None}, closed={self._loop.is_closed() if self._loop else 'N/A'}, init_failed={self._initialization_failed}")
+            return is_healthy
         except ImportError:
+            logger.error("edge-tts module not available!")
             return False
 
 
 # Global TTS client instance
+logger.info("Initializing global TTS client...")
 tts_client = TTSClient()
+logger.info(f"TTS client initialized: healthy={tts_client.check_health()}")
