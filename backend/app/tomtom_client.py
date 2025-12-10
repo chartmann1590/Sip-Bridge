@@ -97,6 +97,25 @@ class TomTomClient:
             return None
 
         try:
+            # Smart state/country inference: if one location has state/country, apply to the other
+            import re
+
+            # Check if destination has state/country (contains comma)
+            if ',' in destination and ',' not in origin:
+                # Extract state/country from destination
+                parts = destination.split(',')
+                if len(parts) >= 2:
+                    state_country = ','.join(parts[1:]).strip()
+                    origin = f"{origin}, {state_country}"
+                    logger.info(f"Inferred origin location: {origin}")
+            # Or if origin has state/country but destination doesn't
+            elif ',' in origin and ',' not in destination:
+                parts = origin.split(',')
+                if len(parts) >= 2:
+                    state_country = ','.join(parts[1:]).strip()
+                    destination = f"{destination}, {state_country}"
+                    logger.info(f"Inferred destination location: {destination}")
+
             # First, geocode origin and destination if they're not coordinates
             origin_coords = self._geocode_location(origin)
             dest_coords = self._geocode_location(destination)

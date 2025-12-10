@@ -967,8 +967,8 @@ class CallSession:
                     # Extract origin and destination
                     # Patterns: "directions from X to Y", "how do I get from X to Y", "navigate from X to Y"
                     patterns = [
-                        r'(?:directions|route|drive|navigate|get)\s+from\s+([^to]+?)\s+to\s+(.+?)(?:\?|$)',
-                        r'(?:how do i get|how to get)\s+from\s+([^to]+?)\s+to\s+(.+?)(?:\?|$)',
+                        r'(?:directions|route|drive|navigate|get)\s+from\s+([^to]+?)\s+to\s+(.+?)(?:\s+would|\s+please|\s+thanks|\.|\?|$)',
+                        r'(?:how do i get|how to get)\s+from\s+([^to]+?)\s+to\s+(.+?)(?:\s+would|\s+please|\s+thanks|\.|\?|$)',
                     ]
 
                     origin = None
@@ -979,6 +979,11 @@ class CallSession:
                         if match:
                             origin = match.group(1).strip()
                             destination = match.group(2).strip()
+
+                            # Clean up extra words at the end
+                            origin = re.sub(r'\s+(would|please|thanks|thank you|be great|be good).*$', '', origin)
+                            destination = re.sub(r'\s+(would|please|thanks|thank you|be great|be good).*$', '', destination)
+
                             break
 
                     if origin and destination:
