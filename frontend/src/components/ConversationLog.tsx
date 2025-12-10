@@ -343,9 +343,8 @@ export function ConversationLog({ websocket }: ConversationLogProps) {
     return content.replace(/(\[CALENDAR:(\d+)\]|\[EMAIL:(\d+)\]|\[WEATHER:(\d+)\]|\[TOMTOM:(\d+)\])/g, '').trim();
   }
 
-  // Extract attachments from message content
-  function extractAttachments(
-    content: string,
+  // Render attachments directly from refs arrays - no regex needed!
+  function renderAttachments(
     calendarRefs: CalendarRef[] = [],
     emailRefs: EmailRef[] = [],
     weatherRefs: WeatherRef[] = [],
@@ -353,119 +352,50 @@ export function ConversationLog({ websocket }: ConversationLogProps) {
   ): React.ReactNode[] {
     const attachments: React.ReactNode[] = [];
     
-    // Use separate regex patterns for each marker type for reliability
-    const calendarRegex = /\[CALENDAR:(\d+)\]/g;
-    const emailRegex = /\[EMAIL:(\d+)\]/g;
-    const weatherRegex = /\[WEATHER:(\d+)\]/g;
-    const tomtomRegex = /\[TOMTOM:(\d+)\]/g;
+    // Render calendar cards
+    calendarRefs.forEach((ref, idx) => {
+      attachments.push(
+        <CalendarCard
+          key={`calendar-${ref.ref_index}-${idx}`}
+          event={ref.event}
+          timezone={timezone}
+          onClick={() => setSelectedEvent(ref.event)}
+        />
+      );
+    });
     
-    // Collect all matches with their positions for proper ordering
-    interface MarkerMatch {
-      type: 'calendar' | 'email' | 'weather' | 'tomtom';
-      index: number;
-      refIndex: number;
-    }
+    // Render email cards
+    emailRefs.forEach((ref, idx) => {
+      attachments.push(
+        <EmailCard
+          key={`email-${ref.ref_index}-${idx}`}
+          email={ref.email}
+          timezone={timezone}
+          onClick={() => setSelectedEmail(ref.email)}
+        />
+      );
+    });
     
-    const allMarkers: MarkerMatch[] = [];
+    // Render weather cards
+    weatherRefs.forEach((ref, idx) => {
+      attachments.push(
+        <WeatherCard
+          key={`weather-${ref.ref_index}-${idx}`}
+          weather={ref.weather}
+          onClick={() => setSelectedWeather(ref.weather)}
+        />
+      );
+    });
     
-    // Find all calendar markers
-    let match;
-    while ((match = calendarRegex.exec(content)) !== null) {
-      allMarkers.push({
-        type: 'calendar',
-        index: match.index,
-        refIndex: parseInt(match[1], 10)
-      });
-    }
-    
-    // Find all email markers
-    while ((match = emailRegex.exec(content)) !== null) {
-      allMarkers.push({
-        type: 'email',
-        index: match.index,
-        refIndex: parseInt(match[1], 10)
-      });
-    }
-    
-    // Find all weather markers
-    while ((match = weatherRegex.exec(content)) !== null) {
-      allMarkers.push({
-        type: 'weather',
-        index: match.index,
-        refIndex: parseInt(match[1], 10)
-      });
-    }
-    
-    // Find all TomTom markers
-    while ((match = tomtomRegex.exec(content)) !== null) {
-      allMarkers.push({
-        type: 'tomtom',
-        index: match.index,
-        refIndex: parseInt(match[1], 10)
-      });
-    }
-    
-    // Sort by position in message to maintain order
-    allMarkers.sort((a, b) => a.index - b.index);
-    
-    // Create attachment components in order
-    allMarkers.forEach((marker, idx) => {
-      switch (marker.type) {
-        case 'calendar': {
-          const ref = calendarRefs.find(r => r.ref_index === marker.refIndex);
-          if (ref) {
-            attachments.push(
-              <CalendarCard
-                key={`calendar-${marker.refIndex}-${marker.index}-${idx}`}
-                event={ref.event}
-                timezone={timezone}
-                onClick={() => setSelectedEvent(ref.event)}
-              />
-            );
-          }
-          break;
-        }
-        case 'email': {
-          const ref = emailRefs.find(r => r.ref_index === marker.refIndex);
-          if (ref) {
-            attachments.push(
-              <EmailCard
-                key={`email-${marker.refIndex}-${marker.index}-${idx}`}
-                email={ref.email}
-                timezone={timezone}
-                onClick={() => setSelectedEmail(ref.email)}
-              />
-            );
-          }
-          break;
-        }
-        case 'weather': {
-          const ref = weatherRefs.find(r => r.ref_index === marker.refIndex);
-          if (ref) {
-            attachments.push(
-              <WeatherCard
-                key={`weather-${marker.refIndex}-${marker.index}-${idx}`}
-                weather={ref.weather}
-                onClick={() => setSelectedWeather(ref.weather)}
-              />
-            );
-          }
-          break;
-        }
-        case 'tomtom': {
-          const ref = tomtomRefs.find(r => r.ref_index === marker.refIndex);
-          if (ref) {
-            attachments.push(
-              <TomTomCard
-                key={`tomtom-${marker.refIndex}-${marker.index}-${idx}`}
-                tomtom={ref.tomtom}
-                onClick={() => setSelectedTomTom(ref.tomtom)}
-              />
-            );
-          }
-          break;
-        }
-      }
+    // Render TomTom cards
+    tomtomRefs.forEach((ref, idx) => {
+      attachments.push(
+        <TomTomCard
+          key={`tomtom-${ref.ref_index}-${idx}`}
+          tomtom={ref.tomtom}
+          onClick={() => setSelectedTomTom(ref.tomtom)}
+        />
+      );
     });
 
     return attachments;
@@ -789,7 +719,7 @@ export function ConversationLog({ websocket }: ConversationLogProps) {
                       {/* Render attachments below the bubble */}
                       {(msg.calendar_refs?.length || msg.email_refs?.length || msg.weather_refs?.length || msg.tomtom_refs?.length) ? (
                         <div className={`mt-2 flex flex-wrap gap-2 ${msg.role === 'assistant' ? 'justify-start' : 'justify-end'}`}>
-                          {extractAttachments(msg.content, msg.calendar_refs, msg.email_refs, msg.weather_refs, msg.tomtom_refs)}
+                          {renderAttachments(msg.calendar_refs, msg.email_refs, msg.weather_refs, msg.tomtom_refs)}
                         </div>
                       ) : null}
 
