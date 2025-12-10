@@ -133,9 +133,9 @@ class TTSClient:
                 voices_list = []
                 voices = await edge_tts.list_voices()
                 for voice in voices:
-                    # Extract the 'Name' field from each voice object
-                    if 'Name' in voice:
-                        voices_list.append(voice['Name'])
+                    # Extract the 'ShortName' field from each voice object (this is what edge_tts.Communicate expects)
+                    if 'ShortName' in voice:
+                        voices_list.append(voice['ShortName'])
                 return voices_list
             
             # Run the async function to get voices
