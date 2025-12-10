@@ -15,11 +15,40 @@ echo "🔄 Starting update process for Sip-Bridge..."
 echo "📦 Repository: $GIT_REPO_URL"
 
 # Step 1: Pull from git
-echo "📥 Pulling latest changes from git (remote: $GIT_REMOTE, branch: $GIT_BRANCH)..."
-git pull $GIT_REMOTE $GIT_BRANCH
-if [ $? -ne 0 ]; then
-    echo "❌ Error: Failed to pull from git"
-    exit 1
+echo "📥 Pulling latest changes from git..."
+
+# Check if remote exists, if not add it
+if ! git remote get-url $GIT_REMOTE &>/dev/null; then
+    echo "🔧 Remote '$GIT_REMOTE' not found, adding it..."
+    if git remote add $GIT_REMOTE $GIT_REPO_URL 2>/dev/null; then
+        echo "✅ Remote added successfully"
+        git pull $GIT_REMOTE $GIT_BRANCH || {
+            echo "❌ Error: Failed to pull from git"
+            exit 1
+        }
+    else
+        echo "⚠️  Warning: Failed to add remote, trying with existing remotes..."
+        # Try with origin if it exists, otherwise just pull
+        if git remote get-url origin &>/dev/null; then
+            echo "📥 Using 'origin' remote instead..."
+            git pull origin $GIT_BRANCH || {
+                echo "❌ Error: Failed to pull from git"
+                exit 1
+            }
+        else
+            echo "📥 Using default git pull..."
+            git pull || {
+                echo "❌ Error: Failed to pull from git"
+                exit 1
+            }
+        fi
+    fi
+else
+    echo "✅ Remote '$GIT_REMOTE' found, pulling..."
+    git pull $GIT_REMOTE $GIT_BRANCH || {
+        echo "❌ Error: Failed to pull from git"
+        exit 1
+    }
 fi
 echo "✅ Git pull completed successfully"
 
