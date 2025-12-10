@@ -1255,25 +1255,37 @@ Only use markers for events/emails/weather/TomTom data explicitly listed above. 
                 # Parse AI response for markers and create reference records
                 if saved_message and (calendar_event_ids or email_ids or weather_data_ids or tomtom_data_ids):
                     try:
-                        # Automatically create refs for ALL calendar events that were fetched
-                        # If calendar events were fetched, they were used in the response, so create refs
-                        for idx, event_id in enumerate(calendar_event_ids):
-                            db.add_calendar_ref(
-                                saved_message.id,
-                                event_id,
-                                idx
-                            )
-                            logger.info(f"Created calendar reference: message={saved_message.id}, event={event_id}, index={idx}")
+                        # Check if user's query mentions calendar-related terms
+                        user_text_lower = text.lower()
+                        calendar_keywords = ['calendar', 'event', 'events', 'meeting', 'meetings', 'appointment', 
+                                           'appointments', 'schedule', 'scheduled', 'what do i have', 'what\'s on',
+                                           'whats on', 'when is', 'when are', 'upcoming', 'today', 'tomorrow']
+                        mentions_calendar = any(keyword in user_text_lower for keyword in calendar_keywords)
+                        
+                        # Only create calendar refs if user asked about calendar/events
+                        if mentions_calendar and calendar_event_ids:
+                            for idx, event_id in enumerate(calendar_event_ids):
+                                db.add_calendar_ref(
+                                    saved_message.id,
+                                    event_id,
+                                    idx
+                                )
+                                logger.info(f"Created calendar reference: message={saved_message.id}, event={event_id}, index={idx}")
 
-                        # Automatically create refs for ALL emails that were fetched
-                        # If emails were fetched, they were used in the response, so create refs
-                        for idx, email_id in enumerate(email_ids):
-                            db.add_email_ref(
-                                saved_message.id,
-                                email_id,
-                                idx
-                            )
-                            logger.info(f"Created email reference: message={saved_message.id}, email={email_id}, index={idx}")
+                        # Check if user's query mentions email-related terms
+                        email_keywords = ['email', 'emails', 'mail', 'inbox', 'message', 'messages', 
+                                        'unread', 'new mail', 'check email', 'check mail']
+                        mentions_email = any(keyword in user_text_lower for keyword in email_keywords)
+                        
+                        # Only create email refs if user asked about emails
+                        if mentions_email and email_ids:
+                            for idx, email_id in enumerate(email_ids):
+                                db.add_email_ref(
+                                    saved_message.id,
+                                    email_id,
+                                    idx
+                                )
+                                logger.info(f"Created email reference: message={saved_message.id}, email={email_id}, index={idx}")
 
                         # Automatically create refs for ALL weather data that was fetched
                         # If weather was fetched, it was used in the response, so create a ref
