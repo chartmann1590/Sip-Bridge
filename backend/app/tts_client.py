@@ -4,6 +4,7 @@ import asyncio
 from typing import Optional, Tuple
 import edge_tts
 import logging
+import threading
 
 from .config import Config
 from .database import db
@@ -17,7 +18,24 @@ class TTSClient:
 
     def __init__(self):
         # Edge TTS is completely free and requires no API key
-        pass
+        # Create a dedicated event loop for TTS operations
+        self._loop = None
+        self._loop_thread = None
+        self._lock = threading.Lock()
+        self._start_event_loop()
+
+    def _start_event_loop(self):
+        """Start a dedicated event loop in a background thread."""
+        def run_loop(loop):
+            asyncio.set_event_loop(loop)
+            loop.run_forever()
+
+        with self._lock:
+            if self._loop is None or self._loop.is_closed():
+                self._loop = asyncio.new_event_loop()
+                self._loop_thread = threading.Thread(target=run_loop, args=(self._loop,), daemon=True)
+                self._loop_thread.start()
+                logger.info("Started dedicated TTS event loop")
 
     @property
     def voice(self) -> str:
@@ -97,7 +115,7 @@ class TTSClient:
     def synthesize_sync(self, text: str, call_id: Optional[str] = None,
                         voice: Optional[str] = None) -> Tuple[Optional[bytes], Optional[str]]:
         """
-        Synchronous version of synthesize.
+        Synchronous version of synthesize - OPTIMIZED to reuse event loop.
 
         Args:
             text: The text to synthesize
@@ -111,14 +129,21 @@ class TTSClient:
             return None, "Empty input text"
 
         try:
-            # Run the async function in a new event loop
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            try:
-                result = loop.run_until_complete(self.synthesize(text, call_id, voice))
-                return result
-            finally:
-                loop.close()
+            # Ensure event loop is running
+            if self._loop is None or self._loop.is_closed():
+                logger.warning("Event loop was closed, restarting...")
+                self._start_event_loop()
+
+            # Schedule the coroutine on the dedicated event loop
+            future = asyncio.run_coroutine_threadsafe(
+                self.synthesize(text, call_id, voice),
+                self._loop
+            )
+
+            # Wait for result with timeout (30 seconds)
+            result = future.result(timeout=30)
+            return result
+
         except Exception as e:
             error = f"TTS sync error: {str(e)}"
             db.add_log('error', 'tts_failed', error, call_id)
@@ -137,18 +162,19 @@ class TTSClient:
                     if 'ShortName' in voice:
                         voices_list.append(voice['ShortName'])
                 return voices_list
-            
-            # Run the async function to get voices
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            try:
-                voices_list = loop.run_until_complete(_fetch_voices())
-                # Sort alphabetically for better UX
-                voices_list.sort()
-                logger.info(f"Successfully fetched {len(voices_list)} voices from edge-tts")
-                return voices_list
-            finally:
-                loop.close()
+
+            # Use the dedicated event loop
+            if self._loop is None or self._loop.is_closed():
+                self._start_event_loop()
+
+            future = asyncio.run_coroutine_threadsafe(_fetch_voices(), self._loop)
+            voices_list = future.result(timeout=10)
+
+            # Sort alphabetically for better UX
+            voices_list.sort()
+            logger.info(f"Successfully fetched {len(voices_list)} voices from edge-tts")
+            return voices_list
+
         except Exception as e:
             logger.error(f"Failed to fetch voices dynamically from edge-tts: {e}")
             # Fallback to a curated list of common voices if dynamic fetch fails
@@ -189,7 +215,8 @@ class TTSClient:
         try:
             # edge-tts is a local library, so it's always available if imported
             import edge_tts
-            return True
+            # Also check if our event loop is running
+            return self._loop is not None and not self._loop.is_closed()
         except ImportError:
             return False
 

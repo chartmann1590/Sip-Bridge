@@ -1455,40 +1455,52 @@ Only use markers for events/emails/weather/TomTom data explicitly listed above. 
             logger.debug("Unmuted incoming audio after TTS playback")
     
     def _send_audio_rtp(self, audio_data: bytes) -> None:
-        """Convert audio and send over RTP."""
+        """Convert audio and send over RTP with precise timing."""
         try:
             try:
                 from pydub import AudioSegment
-                
+
                 # Load audio (MP3 from TTS)
                 audio = AudioSegment.from_mp3(io.BytesIO(audio_data))
-                
+
                 # Convert to 8kHz mono 16-bit
                 audio = audio.set_frame_rate(8000).set_channels(1).set_sample_width(2)
-                
+
                 # Get raw PCM
                 pcm = audio.raw_data
-                
+
                 # Record outgoing audio (Assistant)
                 self._write_audio_to_recording(pcm)
-                
+
                 # Chunk into 20ms (160 samples @ 8kHz = 320 bytes)
                 chunk_size = 160 * 2
+                packet_duration = 0.02  # 20ms per packet
+
+                # Use precise timing to avoid drift
+                start_time = time.time()
+                packet_num = 0
+
                 for i in range(0, len(pcm), chunk_size):
                     chunk = pcm[i:i + chunk_size]
                     if len(chunk) == 0:
                         continue
-                    
-                    # μ-law encode
+
+                    # μ-law encode and send
                     if audioop:
                         ulaw = audioop.lin2ulaw(chunk, 2)
                         self.sip_call.send_rtp(ulaw, payload_type=0)
-                    
-                    time.sleep(0.02)  # 20ms
-            
+
+                    # Calculate precise sleep time to avoid drift
+                    packet_num += 1
+                    expected_time = start_time + (packet_num * packet_duration)
+                    sleep_time = expected_time - time.time()
+
+                    if sleep_time > 0:
+                        time.sleep(sleep_time)
+
             except ImportError:
                 logger.warning("pydub not available, cannot play TTS audio")
-        
+
         except Exception as e:
             logger.error(f"Error sending audio RTP: {e}")
     
