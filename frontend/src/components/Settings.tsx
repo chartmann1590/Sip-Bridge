@@ -61,6 +61,7 @@ export function Settings() {
     sip_extension: '5000',
     ollama_url: 'http://host.docker.internal:11434',
     ollama_model: 'llama3.1',
+    tts_url: '',
     tts_voice: 'en-US-GuyNeural',
     timezone: 'UTC',
   });
