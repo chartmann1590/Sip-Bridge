@@ -175,9 +175,21 @@ class TomTomClient:
                 return None
 
             # Parse coordinates
-            lat, lon = coords.split(',')
+            lat, lon = map(float, coords.split(','))
 
-            url = f"{self.TRAFFIC_BASE_URL}/incidentDetails/s3/{lat},{lon},{radius_km},10/json"
+            # Calculate bounding box (approximate: 1 degree ~= 111km at equator)
+            lat_delta = radius_km / 111.0
+            lon_delta = radius_km / (111.0 * abs(lat / 90.0 + 0.01))  # Adjust for latitude
+
+            min_lat = lat - lat_delta
+            max_lat = lat + lat_delta
+            min_lon = lon - lon_delta
+            max_lon = lon + lon_delta
+
+            # TomTom Traffic API expects: minLat,minLon,maxLat,maxLon
+            bbox = f"{min_lat},{min_lon},{max_lat},{max_lon}"
+
+            url = f"{self.TRAFFIC_BASE_URL}/incidentDetails/s3/{bbox}/10/-1/json"
 
             params = {
                 "key": self.api_key
