@@ -1283,33 +1283,25 @@ Only use markers for events/emails/weather/TomTom data explicitly listed above. 
                             else:
                                 logger.warning(f"AI used invalid email marker index: {marker_index} (max: {len(email_ids) - 1})")
 
-                        # Extract weather markers [WEATHER:N]
-                        weather_markers = re.findall(r'\[WEATHER:(\d+)\]', response)
-                        for marker_index_str in weather_markers:
-                            marker_index = int(marker_index_str)
-                            if marker_index < len(weather_data_ids):
-                                db.add_weather_ref(
-                                    saved_message.id,
-                                    weather_data_ids[marker_index],
-                                    marker_index
-                                )
-                                logger.info(f"Created weather reference: message={saved_message.id}, weather={weather_data_ids[marker_index]}, index={marker_index}")
-                            else:
-                                logger.warning(f"AI used invalid weather marker index: {marker_index} (max: {len(weather_data_ids) - 1})")
+                        # Automatically create refs for ALL weather data that was fetched
+                        # If weather was fetched, it was used in the response, so create a ref
+                        for idx, weather_id in enumerate(weather_data_ids):
+                            db.add_weather_ref(
+                                saved_message.id,
+                                weather_id,
+                                idx
+                            )
+                            logger.info(f"Created weather reference: message={saved_message.id}, weather={weather_id}, index={idx}")
 
-                        # Extract TomTom markers [TOMTOM:N]
-                        tomtom_markers = re.findall(r'\[TOMTOM:(\d+)\]', response)
-                        for marker_index_str in tomtom_markers:
-                            marker_index = int(marker_index_str)
-                            if marker_index < len(tomtom_data_ids):
-                                db.add_tomtom_ref(
-                                    saved_message.id,
-                                    tomtom_data_ids[marker_index],
-                                    marker_index
-                                )
-                                logger.info(f"Created TomTom reference: message={saved_message.id}, tomtom={tomtom_data_ids[marker_index]}, index={marker_index}")
-                            else:
-                                logger.warning(f"AI used invalid TomTom marker index: {marker_index} (max: {len(tomtom_data_ids) - 1})")
+                        # Automatically create refs for ALL TomTom data that was fetched
+                        # If TomTom data was fetched, it was used in the response, so create a ref
+                        for idx, tomtom_id in enumerate(tomtom_data_ids):
+                            db.add_tomtom_ref(
+                                saved_message.id,
+                                tomtom_id,
+                                idx
+                            )
+                            logger.info(f"Created TomTom reference: message={saved_message.id}, tomtom={tomtom_id}, index={idx}")
                     except Exception as e:
                         logger.error(f"Error creating message references: {e}", exc_info=True)
 
