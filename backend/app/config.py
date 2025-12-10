@@ -63,6 +63,9 @@ class Config:
     EMAIL_IMAP_SERVER: str = os.getenv('EMAIL_IMAP_SERVER', 'imap.gmail.com')
     EMAIL_IMAP_PORT: int = int(os.getenv('EMAIL_IMAP_PORT', '993'))
 
+    # OpenWeatherMap API
+    OPENWEATHER_API_KEY: str = os.getenv('OPENWEATHER_API_KEY', '')
+
     @classmethod
     def ensure_data_dir(cls) -> None:
         """Ensure data directory exists."""
@@ -91,6 +94,7 @@ class Config:
             'has_groq_key': bool(cls.GROQ_API_KEY),
             'has_tts_key': bool(cls.TTS_API_KEY),
             'has_email_password': bool(cls.EMAIL_APP_PASSWORD),
+            'has_weather_key': bool(cls.OPENWEATHER_API_KEY),
         }
     
     @classmethod
@@ -132,6 +136,8 @@ class Config:
             cls.EMAIL_IMAP_SERVER = data['email_imap_server']
         if 'email_imap_port' in data:
             cls.EMAIL_IMAP_PORT = int(data['email_imap_port'])
+        if 'openweather_api_key' in data:
+            cls.OPENWEATHER_API_KEY = data['openweather_api_key']
 
 
 # Initialize data directory

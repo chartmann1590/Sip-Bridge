@@ -26,6 +26,7 @@ from .gpt_client import gpt_client
 from .tts_client import tts_client
 from .calendar_client import calendar_client
 from .email_client import email_client
+from .weather_client import weather_client
 
 from pathlib import Path
 from datetime import datetime, timezone, timedelta
@@ -535,11 +536,11 @@ class CallSession:
         self.processing = False
         
         # RMS monitoring
-        self.rms_samples: list = []
+        self.rms_samples = deque(maxlen=200)  # Only keep last 200 samples to prevent memory leak
         self.max_rms = 0
         
         # Adaptive threshold calibration
-        self.baseline_rms_samples: list = []
+        self.baseline_rms_samples = deque(maxlen=200)  # 3 seconds * 50 frames/sec = 150 max, use 200 for safety
         self.baseline_collection_time = 3.0  # seconds
         self.baseline_collected = False
 
@@ -878,6 +879,48 @@ class CallSession:
                     persona = f"{persona}\n\nYou have no unread emails."
             except Exception as e:
                 logger.warning(f"Could not fetch emails: {e}")
+
+        # 2.5. Add weather context (on-demand)
+        weather_keywords = ['weather', 'temperature', 'temp', 'rain', 'snow', 'sunny', 'cloudy', 'forecast', 'humid', 'wind']
+        is_asking_about_weather = any(keyword in user_text.lower() for keyword in weather_keywords)
+
+        if is_asking_about_weather and Config.OPENWEATHER_API_KEY:
+            try:
+                # Try to extract location from user text
+                import re
+                # Common patterns: "weather in [location]", "weather for [location]", etc.
+                location_patterns = [
+                    r'(?:weather|temperature|temp|forecast|rain|snow|sunny|cloudy)\s+(?:in|at|for)\s+([a-zA-Z\s,]+?)(?:\s+today|\s+tomorrow|\s*\?|\s*$)',
+                    r'(?:how\'s|what\'s|hows|whats)\s+(?:the\s+)?(?:weather|temperature)\s+(?:in|at|for)\s+([a-zA-Z\s,]+?)(?:\s+today|\s+tomorrow|\s*\?|\s*$)',
+                    r'(?:is\s+it|will\s+it)\s+(?:rain|snow|sunny|cloudy)(?:ing)?\s+(?:in|at)\s+([a-zA-Z\s,]+?)(?:\s+today|\s+tomorrow|\s*\?|\s*$)',
+                ]
+
+                location = None
+                for pattern in location_patterns:
+                    match = re.search(pattern, user_text.lower())
+                    if match:
+                        location = match.group(1).strip()
+                        break
+
+                if location:
+                    # Clean up location (remove extra words)
+                    location = re.sub(r'\s+(today|tomorrow|right now|currently)$', '', location)
+
+                    # Get weather data
+                    weather_data = weather_client.get_weather(location, units="imperial")
+
+                    if weather_data:
+                        weather_text = weather_client.format_weather_for_voice(weather_data)
+                        persona = f"{persona}\n\nCurrent weather information:\n{weather_text}"
+                        logger.info(f"Added weather for {location} to context: {weather_data['temperature']}°F, {weather_data['description']}")
+                    else:
+                        persona = f"{persona}\n\nNote: Could not fetch weather for '{location}'. The location might not be found or the API key might be invalid. Ask the user to provide a valid city name."
+                else:
+                    # User is asking about weather but didn't specify location
+                    persona = f"{persona}\n\nNote: User is asking about weather but didn't specify a location. Ask them which city or location they want weather for."
+
+            except Exception as e:
+                logger.warning(f"Could not fetch weather: {e}")
 
         # 3. Add calendar context
         if Config.CALENDAR_URL:

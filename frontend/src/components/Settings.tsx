@@ -17,7 +17,8 @@ import {
   Clock,
   Play,
   Calendar,
-  Mail
+  Mail,
+  Cloud
 } from 'lucide-react';
 import { setTimezone, getCurrentTime } from '../utils/timezone';
 
@@ -40,6 +41,7 @@ interface Config {
   email_app_password?: string;
   email_imap_server?: string;
   email_imap_port?: number;
+  openweather_api_key?: string;
 }
 
 interface OllamaModel {
@@ -887,6 +889,49 @@ export function Settings() {
               <strong>How it works:</strong> The AI will only check your email when you specifically ask about it during a call (e.g., "Do I have any new emails?"). It will fetch your 3 most recent unread emails from your primary inbox.
             </p>
           </div>
+        </div>
+      </div>
+
+      {/* OpenWeatherMap Integration */}
+      <div className="glass rounded-xl p-6">
+        <div className="flex items-center gap-3 mb-6">
+          <div className="p-2 rounded-lg bg-cyan-500/20">
+            <Cloud className="w-5 h-5 text-cyan-400" />
+          </div>
+          <div>
+            <h3 className="text-lg font-semibold text-white">Weather Integration</h3>
+            <p className="text-sm text-gray-400">Connect to OpenWeatherMap for weather information</p>
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-300 mb-2">
+            <Key className="w-4 h-4 inline mr-2" />
+            OpenWeatherMap API Key
+          </label>
+          <div className="relative">
+            <input
+              type={showPasswords['openweather_api_key'] ? 'text' : 'password'}
+              value={config.openweather_api_key || ''}
+              onChange={(e) => handleChange('openweather_api_key', e.target.value)}
+              className="w-full px-4 py-2 pr-10 bg-gray-800 border border-gray-700 rounded-lg text-gray-200 focus:outline-none focus:border-green-500 font-mono text-sm"
+              placeholder="Your OpenWeatherMap API key"
+            />
+            <button
+              type="button"
+              onClick={() => togglePasswordVisibility('openweather_api_key')}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-200"
+            >
+              {showPasswords['openweather_api_key'] ? (
+                <EyeOff className="w-4 h-4" />
+              ) : (
+                <Eye className="w-4 h-4" />
+              )}
+            </button>
+          </div>
+          <p className="text-xs text-gray-500 mt-1">
+            Get your free API key at <a href="https://openweathermap.org/api" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">openweathermap.org/api</a>. The AI will be able to answer questions about the weather when you ask.
+          </p>
         </div>
       </div>
 

@@ -12,6 +12,7 @@ A Docker-based SIP voice bridge that connects VoIP calls to AI services for inte
 - **Persistent Storage**: SQLite database for conversation history and settings
 - **Calendar Integration**: Access and query your calendar events during calls
 - **Email Integration**: Check your inbox on-demand during calls via IMAP
+- **Weather Integration**: Get current weather and forecasts for any location via OpenWeatherMap
 - **Conversation History**: Browse and export past conversations
 - **Real-time Updates**: WebSocket-based live updates during calls
 
@@ -95,6 +96,10 @@ EMAIL_APP_PASSWORD=your_app_password_here
 EMAIL_IMAP_SERVER=imap.gmail.com
 EMAIL_IMAP_PORT=993
 
+# Weather Integration (optional, OpenWeatherMap)
+# For weather information during calls
+OPENWEATHER_API_KEY=your_openweather_api_key_here
+
 # Bot Persona (optional)
 # Customize the AI's personality and response style
 BOT_PERSONA=You are a friendly AI assistant on a phone call. Keep your responses short, conversational, and to the point.
@@ -151,6 +156,14 @@ Once running, access the web dashboard at:
 - IMAP integration for multiple email providers
 - Privacy-focused: emails are not permanently stored
 
+### Weather
+
+- Automatic weather detection when users ask about weather
+- Current weather conditions for any location
+- Weather forecasts (optional)
+- Supports multiple temperature units (Fahrenheit, Celsius, Kelvin)
+- Natural voice-formatted weather responses
+
 ### Settings
 
 - SIP server configuration
@@ -160,6 +173,7 @@ Once running, access the web dashboard at:
 - Timezone configuration (can be set in UI or .env file)
 - Calendar URL configuration
 - Email IMAP settings
+- Weather API key configuration
 - Bot persona customization
 
 ## API Endpoints
@@ -190,6 +204,14 @@ Once running, access the web dashboard at:
 
 - `GET /api/email/test` - Test email connection and fetch unread emails
 - `GET /api/email/unread` - Get unread emails (query param: `limit`)
+
+### Weather
+
+Weather functionality is automatically integrated into the AI conversation flow. When users ask about weather, the system:
+- Detects weather-related keywords in speech
+- Extracts location from the query
+- Fetches current weather from OpenWeatherMap
+- Injects weather context into AI responses
 
 ### SIP Control
 
@@ -237,6 +259,7 @@ Sip-Bridge/
 │   │   ├── tts_client.py # Text-to-speech client
 │   │   ├── calendar_client.py # Calendar integration
 │   │   ├── email_client.py # Email IMAP integration
+│   │   ├── weather_client.py # Weather integration (OpenWeatherMap)
 │   │   ├── database.py  # SQLite database models
 │   │   ├── websocket.py  # WebSocket manager
 │   │   └── config.py    # Configuration management
@@ -301,6 +324,17 @@ IMAP email integration:
 - On-demand email checking during calls
 - See [Email Integration Guide](docs/EMAIL_INTEGRATION.md) for details
 
+### Weather Services (OpenWeatherMap)
+
+OpenWeatherMap API integration:
+- Website: https://openweathermap.org/api
+- Free tier available (1,000 calls/day)
+- Automatic weather detection in conversations
+- Current weather and forecast support
+- Supports city names and "city,country" format
+- Multiple temperature units (imperial, metric, standard)
+- Weather data is automatically injected into AI context when users ask about weather
+
 ## Documentation
 
 Additional detailed documentation is available in the `docs/` directory:
@@ -360,6 +394,15 @@ Additional detailed documentation is available in the `docs/` directory:
 3. Check IMAP server and port settings
 4. Test endpoint: `GET /api/email/test`
 5. See [Email Integration Guide](docs/EMAIL_INTEGRATION.md) for details
+
+### Weather Not Working
+
+1. Verify OpenWeatherMap API key is configured in Settings
+2. Check that the API key is valid and has available quota
+3. Ensure location names are spelled correctly (e.g., "New York", "London,UK")
+4. Check Docker logs for weather API errors: `docker-compose logs | grep weather`
+5. Weather is automatically triggered when users ask about weather - no manual API calls needed
+6. Get a free API key at https://openweathermap.org/api
 
 ### Web Interface Not Loading
 

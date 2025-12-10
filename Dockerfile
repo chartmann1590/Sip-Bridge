@@ -14,27 +14,35 @@ RUN npm run build
 # Stage 2: Python backend with PJSIP
 FROM python:3.11-slim-bookworm
 
-# Install system dependencies for PJSIP and audio processing
+WORKDIR /app
+
+# Install runtime dependencies and build dependencies separately
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    # Build dependencies (will be removed later)
     build-essential \
-    libssl-dev \
-    libasound2-dev \
-    libopus-dev \
-    libspeex-dev \
-    libspeexdsp-dev \
-    libsndfile1-dev \
-    portaudio19-dev \
-    ffmpeg \
-    curl \
     pkg-config \
     python3-dev \
+    # Runtime dependencies (will be kept)
+    libssl3 \
+    libasound2 \
+    libopus0 \
+    libspeex1 \
+    libspeexdsp1 \
+    libsndfile1 \
+    libportaudio2 \
+    ffmpeg \
+    curl \
     && rm -rf /var/lib/apt/lists/*
-
-WORKDIR /app
 
 # Copy Python requirements and install
 COPY backend/requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt \
+    # Remove build dependencies after pip install to reduce image size
+    && apt-get purge -y --auto-remove \
+    build-essential \
+    pkg-config \
+    python3-dev \
+    && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 # Copy backend source
 COPY backend/ ./backend/
