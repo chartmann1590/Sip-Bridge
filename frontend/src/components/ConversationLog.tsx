@@ -352,75 +352,121 @@ export function ConversationLog({ websocket }: ConversationLogProps) {
     tomtomRefs: TomTomRef[] = []
   ): React.ReactNode[] {
     const attachments: React.ReactNode[] = [];
-    const markerRegex = /(\[CALENDAR:(\d+)\]|\[EMAIL:(\d+)\]|\[WEATHER:(\d+)\]|\[TOMTOM:(\d+)\])/g;
+    
+    // Use separate regex patterns for each marker type for reliability
+    const calendarRegex = /\[CALENDAR:(\d+)\]/g;
+    const emailRegex = /\[EMAIL:(\d+)\]/g;
+    const weatherRegex = /\[WEATHER:(\d+)\]/g;
+    const tomtomRegex = /\[TOMTOM:(\d+)\]/g;
+    
+    // Collect all matches with their positions for proper ordering
+    interface MarkerMatch {
+      type: 'calendar' | 'email' | 'weather' | 'tomtom';
+      index: number;
+      refIndex: number;
+    }
+    
+    const allMarkers: MarkerMatch[] = [];
+    
+    // Find all calendar markers
     let match;
-
-    while ((match = markerRegex.exec(content)) !== null) {
-      const calendarIndex = match[2];
-      const emailIndex = match[3];
-      const weatherIndex = match[4];
-      const tomtomIndex = match[5];
-
-      if (calendarIndex !== undefined) {
-        // Calendar marker
-        const idx = parseInt(calendarIndex, 10);
-        const ref = calendarRefs.find(r => r.ref_index === idx);
-
-        if (ref) {
-          attachments.push(
-            <CalendarCard
-              key={`calendar-${idx}-${match.index}`}
-              event={ref.event}
-              timezone={timezone}
-              onClick={() => setSelectedEvent(ref.event)}
-            />
-          );
+    while ((match = calendarRegex.exec(content)) !== null) {
+      allMarkers.push({
+        type: 'calendar',
+        index: match.index,
+        refIndex: parseInt(match[1], 10)
+      });
+    }
+    
+    // Find all email markers
+    while ((match = emailRegex.exec(content)) !== null) {
+      allMarkers.push({
+        type: 'email',
+        index: match.index,
+        refIndex: parseInt(match[1], 10)
+      });
+    }
+    
+    // Find all weather markers
+    while ((match = weatherRegex.exec(content)) !== null) {
+      allMarkers.push({
+        type: 'weather',
+        index: match.index,
+        refIndex: parseInt(match[1], 10)
+      });
+    }
+    
+    // Find all TomTom markers
+    while ((match = tomtomRegex.exec(content)) !== null) {
+      allMarkers.push({
+        type: 'tomtom',
+        index: match.index,
+        refIndex: parseInt(match[1], 10)
+      });
+    }
+    
+    // Sort by position in message to maintain order
+    allMarkers.sort((a, b) => a.index - b.index);
+    
+    // Create attachment components in order
+    allMarkers.forEach((marker, idx) => {
+      switch (marker.type) {
+        case 'calendar': {
+          const ref = calendarRefs.find(r => r.ref_index === marker.refIndex);
+          if (ref) {
+            attachments.push(
+              <CalendarCard
+                key={`calendar-${marker.refIndex}-${marker.index}-${idx}`}
+                event={ref.event}
+                timezone={timezone}
+                onClick={() => setSelectedEvent(ref.event)}
+              />
+            );
+          }
+          break;
         }
-      } else if (emailIndex !== undefined) {
-        // Email marker
-        const idx = parseInt(emailIndex, 10);
-        const ref = emailRefs.find(r => r.ref_index === idx);
-
-        if (ref) {
-          attachments.push(
-            <EmailCard
-              key={`email-${idx}-${match.index}`}
-              email={ref.email}
-              timezone={timezone}
-              onClick={() => setSelectedEmail(ref.email)}
-            />
-          );
+        case 'email': {
+          const ref = emailRefs.find(r => r.ref_index === marker.refIndex);
+          if (ref) {
+            attachments.push(
+              <EmailCard
+                key={`email-${marker.refIndex}-${marker.index}-${idx}`}
+                email={ref.email}
+                timezone={timezone}
+                onClick={() => setSelectedEmail(ref.email)}
+              />
+            );
+          }
+          break;
         }
-      } else if (weatherIndex !== undefined) {
-        // Weather marker
-        const idx = parseInt(weatherIndex, 10);
-        const ref = weatherRefs.find(r => r.ref_index === idx);
-
-        if (ref) {
-          attachments.push(
-            <WeatherCard
-              key={`weather-${idx}-${match.index}`}
-              weather={ref.weather}
-              onClick={() => setSelectedWeather(ref.weather)}
-            />
-          );
+        case 'weather': {
+          const ref = weatherRefs.find(r => r.ref_index === marker.refIndex);
+          if (ref) {
+            attachments.push(
+              <WeatherCard
+                key={`weather-${marker.refIndex}-${marker.index}-${idx}`}
+                weather={ref.weather}
+                onClick={() => setSelectedWeather(ref.weather)}
+              />
+            );
+          }
+          break;
         }
-      } else if (tomtomIndex !== undefined) {
-        // TomTom marker
-        const idx = parseInt(tomtomIndex, 10);
-        const ref = tomtomRefs.find(r => r.ref_index === idx);
-
-        if (ref) {
-          attachments.push(
-            <TomTomCard
-              key={`tomtom-${idx}-${match.index}`}
-              tomtom={ref.tomtom}
-              onClick={() => setSelectedTomTom(ref.tomtom)}
-            />
-          );
+        case 'tomtom': {
+          const ref = tomtomRefs.find(r => r.ref_index === marker.refIndex);
+          if (ref) {
+            attachments.push(
+              <TomTomCard
+                key={`tomtom-${marker.refIndex}-${marker.index}-${idx}`}
+                tomtom={ref.tomtom}
+                onClick={() => setSelectedTomTom(ref.tomtom)}
+              />
+            );
+          }
+          break;
         }
       }
-    }
+    });
 
     return attachments;
   }

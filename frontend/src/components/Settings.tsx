@@ -61,7 +61,6 @@ export function Settings() {
     sip_extension: '5000',
     ollama_url: 'http://host.docker.internal:11434',
     ollama_model: 'llama3.1',
-    tts_url: 'http://10.0.0.59:5050',
     tts_voice: 'en-US-GuyNeural',
     timezone: 'UTC',
   });
@@ -581,47 +580,6 @@ export function Settings() {
         </div>
         
         <div className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">
-              <Server className="w-4 h-4 inline mr-2" />
-              TTS Server URL
-            </label>
-            <input
-              type="text"
-              value={config.tts_url}
-              onChange={(e) => handleChange('tts_url', e.target.value)}
-              className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-gray-200 focus:outline-none focus:border-green-500"
-              placeholder="http://10.0.0.59:5050"
-            />
-          </div>
-          
-          <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">
-              <Key className="w-4 h-4 inline mr-2" />
-              TTS API Key
-            </label>
-            <div className="relative">
-              <input
-                type={showPasswords['tts_api_key'] ? 'text' : 'password'}
-                value={config.tts_api_key || ''}
-                onChange={(e) => handleChange('tts_api_key', e.target.value)}
-                className="w-full px-4 py-2 pr-10 bg-gray-800 border border-gray-700 rounded-lg text-gray-200 focus:outline-none focus:border-green-500 font-mono text-sm"
-                placeholder="your_api_key_here"
-              />
-              <button
-                type="button"
-                onClick={() => togglePasswordVisibility('tts_api_key')}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-200"
-              >
-                {showPasswords['tts_api_key'] ? (
-                  <EyeOff className="w-4 h-4" />
-                ) : (
-                  <Eye className="w-4 h-4" />
-                )}
-              </button>
-            </div>
-          </div>
-          
           <div>
             <label className="block text-sm font-medium text-gray-300 mb-2">
               Voice

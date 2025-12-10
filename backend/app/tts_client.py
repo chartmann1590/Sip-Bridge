@@ -126,38 +126,62 @@ class TTSClient:
             return None, error
 
     def get_available_voices(self) -> list:
-        """Get list of available Microsoft Edge TTS voices."""
-        # Common high-quality Microsoft Edge TTS voices
-        return [
-            # US English voices (Neural)
-            'en-US-AriaNeural',        # Female, natural
-            'en-US-GuyNeural',          # Male, natural
-            'en-US-JennyNeural',        # Female, conversational
-            'en-US-DavisNeural',        # Male, friendly
-            'en-US-AmberNeural',        # Female, warm
-            'en-US-AnaNeural',          # Female (child)
-            'en-US-AndrewNeural',       # Male, professional
-            'en-US-EmmaNeural',         # Female, professional
-            'en-US-BrianNeural',        # Male, clear
-            'en-US-ChristopherNeural',  # Male, mature
-            'en-US-ElizabethNeural',    # Female, mature
-            'en-US-EricNeural',         # Male, energetic
-            'en-US-JacobNeural',        # Male, young
-            'en-US-MichelleNeural',     # Female, clear
-            'en-US-MonicaNeural',       # Female, friendly
-            'en-US-SaraNeural',         # Female, soft
-            # UK English voices
-            'en-GB-SoniaNeural',        # Female, British
-            'en-GB-RyanNeural',         # Male, British
-            'en-GB-LibbyNeural',        # Female, British
-            'en-GB-MiaNeural',          # Female, British
-            # Australian English voices
-            'en-AU-NatashaNeural',      # Female, Australian
-            'en-AU-WilliamNeural',      # Male, Australian
-            # Canadian English voices
-            'en-CA-ClaraNeural',        # Female, Canadian
-            'en-CA-LiamNeural',         # Male, Canadian
-        ]
+        """Get list of available Microsoft Edge TTS voices dynamically from edge-tts."""
+        try:
+            # Fetch all available voices from edge-tts
+            async def _fetch_voices():
+                voices_list = []
+                async for voice in edge_tts.list_voices():
+                    # Extract the 'Name' field from each voice object
+                    if 'Name' in voice:
+                        voices_list.append(voice['Name'])
+                return voices_list
+            
+            # Run the async function to get voices
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                voices_list = loop.run_until_complete(_fetch_voices())
+                # Sort alphabetically for better UX
+                voices_list.sort()
+                logger.info(f"Successfully fetched {len(voices_list)} voices from edge-tts")
+                return voices_list
+            finally:
+                loop.close()
+        except Exception as e:
+            logger.error(f"Failed to fetch voices dynamically from edge-tts: {e}")
+            # Fallback to a curated list of common voices if dynamic fetch fails
+            logger.warning("Using fallback voice list")
+            return [
+                # US English voices (Neural)
+                'en-US-AriaNeural',        # Female, natural
+                'en-US-GuyNeural',          # Male, natural
+                'en-US-JennyNeural',        # Female, conversational
+                'en-US-DavisNeural',        # Male, friendly
+                'en-US-AmberNeural',        # Female, warm
+                'en-US-AnaNeural',          # Female (child)
+                'en-US-AndrewNeural',       # Male, professional
+                'en-US-EmmaNeural',         # Female, professional
+                'en-US-BrianNeural',        # Male, clear
+                'en-US-ChristopherNeural',  # Male, mature
+                'en-US-ElizabethNeural',    # Female, mature
+                'en-US-EricNeural',         # Male, energetic
+                'en-US-JacobNeural',        # Male, young
+                'en-US-MichelleNeural',     # Female, clear
+                'en-US-MonicaNeural',       # Female, friendly
+                'en-US-SaraNeural',         # Female, soft
+                # UK English voices
+                'en-GB-SoniaNeural',        # Female, British
+                'en-GB-RyanNeural',         # Male, British
+                'en-GB-LibbyNeural',        # Female, British
+                'en-GB-MiaNeural',          # Female, British
+                # Australian English voices
+                'en-AU-NatashaNeural',      # Female, Australian
+                'en-AU-WilliamNeural',      # Male, Australian
+                # Canadian English voices
+                'en-CA-ClaraNeural',        # Female, Canadian
+                'en-CA-LiamNeural',         # Male, Canadian
+            ]
 
     def check_health(self) -> bool:
         """Check if edge-tts is available (always true since it's a local library)."""
