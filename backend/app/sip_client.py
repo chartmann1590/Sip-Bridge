@@ -1255,33 +1255,25 @@ Only use markers for events/emails/weather/TomTom data explicitly listed above. 
                 # Parse AI response for markers and create reference records
                 if saved_message and (calendar_event_ids or email_ids or weather_data_ids or tomtom_data_ids):
                     try:
-                        # Extract calendar markers [CALENDAR:N]
-                        calendar_markers = re.findall(r'\[CALENDAR:(\d+)\]', response)
-                        for marker_index_str in calendar_markers:
-                            marker_index = int(marker_index_str)
-                            if marker_index < len(calendar_event_ids):
-                                db.add_calendar_ref(
-                                    saved_message.id,
-                                    calendar_event_ids[marker_index],
-                                    marker_index
-                                )
-                                logger.info(f"Created calendar reference: message={saved_message.id}, event={calendar_event_ids[marker_index]}, index={marker_index}")
-                            else:
-                                logger.warning(f"AI used invalid calendar marker index: {marker_index} (max: {len(calendar_event_ids) - 1})")
+                        # Automatically create refs for ALL calendar events that were fetched
+                        # If calendar events were fetched, they were used in the response, so create refs
+                        for idx, event_id in enumerate(calendar_event_ids):
+                            db.add_calendar_ref(
+                                saved_message.id,
+                                event_id,
+                                idx
+                            )
+                            logger.info(f"Created calendar reference: message={saved_message.id}, event={event_id}, index={idx}")
 
-                        # Extract email markers [EMAIL:N]
-                        email_markers = re.findall(r'\[EMAIL:(\d+)\]', response)
-                        for marker_index_str in email_markers:
-                            marker_index = int(marker_index_str)
-                            if marker_index < len(email_ids):
-                                db.add_email_ref(
-                                    saved_message.id,
-                                    email_ids[marker_index],
-                                    marker_index
-                                )
-                                logger.info(f"Created email reference: message={saved_message.id}, email={email_ids[marker_index]}, index={marker_index}")
-                            else:
-                                logger.warning(f"AI used invalid email marker index: {marker_index} (max: {len(email_ids) - 1})")
+                        # Automatically create refs for ALL emails that were fetched
+                        # If emails were fetched, they were used in the response, so create refs
+                        for idx, email_id in enumerate(email_ids):
+                            db.add_email_ref(
+                                saved_message.id,
+                                email_id,
+                                idx
+                            )
+                            logger.info(f"Created email reference: message={saved_message.id}, email={email_id}, index={idx}")
 
                         # Automatically create refs for ALL weather data that was fetched
                         # If weather was fetched, it was used in the response, so create a ref
