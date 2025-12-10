@@ -896,6 +896,9 @@ class CallSession:
                     r'(?:weather|temperature|temp|forecast|rain|snow|sunny|cloudy)\s+(?:in|at|for)\s+([a-zA-Z\s,]+?)(?:\s+today|\s+tomorrow|\s*\?|\s*$)',
                     r'(?:how\'s|what\'s|hows|whats)\s+(?:the\s+)?(?:weather|temperature)\s+(?:in|at|for)\s+([a-zA-Z\s,]+?)(?:\s+today|\s+tomorrow|\s*\?|\s*$)',
                     r'(?:is\s+it|will\s+it)\s+(?:rain|snow|sunny|cloudy)(?:ing)?\s+(?:in|at)\s+([a-zA-Z\s,]+?)(?:\s+today|\s+tomorrow|\s*\?|\s*$)',
+                    r'(?:what|how).*?(?:weather|temperature).*?(?:is|like).*?(?:in|at|for)\s+([a-zA-Z\s,]+?)(?:\s+today|\s+tomorrow|\s*\?|\s*$)',
+                    r'(?:weather|temperature).*?(?:like|is).*?(?:in|at|for)\s+([a-zA-Z\s,]+?)(?:\s+today|\s+tomorrow|\s*\?|\s*$)',
+                    r'(?:can you|could you).*?(?:tell|let me know|check).*?(?:weather|temperature).*?(?:in|at|for)\s+([a-zA-Z\s,]+?)(?:\s+today|\s+tomorrow|\s*\?|\s*$)',
                 ]
 
                 location = None
