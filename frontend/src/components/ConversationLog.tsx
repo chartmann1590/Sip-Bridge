@@ -825,6 +825,7 @@ export function ConversationLog({ websocket }: ConversationLogProps) {
           note={{
             ...selectedNote,
             summary: selectedNote.summary ?? null,
+            call_id: selectedNote.call_id ?? null,
           }}
           onClose={() => setSelectedNote(null)}
           onUpdate={async (id, title, summary, transcript) => {
