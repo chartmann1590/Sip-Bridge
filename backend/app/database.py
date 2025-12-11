@@ -1071,7 +1071,7 @@ class Database:
 
     def create_note(self, title: str, transcript: str, summary: Optional[str] = None, call_id: Optional[str] = None) -> int:
         """Create a new note."""
-        with self.Session() as session:
+        with self.SessionLocal() as session:
             note = Note(
                 title=title,
                 summary=summary,
@@ -1090,20 +1090,20 @@ class Database:
 
     def get_all_notes(self) -> List[Dict[str, Any]]:
         """Get all notes ordered by creation date (newest first)."""
-        with self.Session() as session:
+        with self.SessionLocal() as session:
             notes = session.query(Note).order_by(Note.created_at.desc()).all()
             return [note.to_dict() for note in notes]
 
     def get_note(self, note_id: int) -> Optional[Dict[str, Any]]:
         """Get a note by ID."""
-        with self.Session() as session:
+        with self.SessionLocal() as session:
             note = session.query(Note).filter_by(id=note_id).first()
             return note.to_dict() if note else None
 
     def update_note(self, note_id: int, title: Optional[str] = None,
                    summary: Optional[str] = None, transcript: Optional[str] = None) -> bool:
         """Update a note."""
-        with self.Session() as session:
+        with self.SessionLocal() as session:
             note = session.query(Note).filter_by(id=note_id).first()
             if not note:
                 return False
@@ -1126,7 +1126,7 @@ class Database:
 
     def delete_note(self, note_id: int) -> bool:
         """Delete a note."""
-        with self.Session() as session:
+        with self.SessionLocal() as session:
             note = session.query(Note).filter_by(id=note_id).first()
             if not note:
                 return False
