@@ -1,4 +1,4 @@
-import { FileText, Calendar } from 'lucide-react';
+import { Calendar } from 'lucide-react';
 import { formatDate, formatTime } from '../utils/timezone';
 
 interface NoteCardProps {
@@ -13,7 +13,6 @@ interface NoteCardProps {
 }
 
 export function NoteCard({ note, timezone, onClick }: NoteCardProps) {
-  const createdDate = new Date(note.created_at);
 
   return (
     <button

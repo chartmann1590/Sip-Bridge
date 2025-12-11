@@ -501,6 +501,7 @@ export function ConversationLog({ websocket }: ConversationLogProps) {
           email_refs: m.email_refs,
           weather_refs: m.weather_refs,
           tomtom_refs: m.tomtom_refs,
+          note_refs: m.note_refs,
         }))
         .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
       : [];
@@ -821,7 +822,10 @@ export function ConversationLog({ websocket }: ConversationLogProps) {
 
       {selectedNote && (
         <NoteModal
-          note={selectedNote}
+          note={{
+            ...selectedNote,
+            summary: selectedNote.summary ?? null,
+          }}
           onClose={() => setSelectedNote(null)}
           onUpdate={async (id, title, summary, transcript) => {
             try {
