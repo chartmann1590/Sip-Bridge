@@ -1626,8 +1626,29 @@ Only use markers for events/emails/weather/TomTom data explicitly listed above. 
 
         # Acknowledge to user
         response = f"Note saved as '{title}'."
+        note_refs_data = None
         if self.call_state and self.call_state.conversation_id:
-            db.add_message(self.call_state.conversation_id, 'assistant', response)
+            # Save message first to get message_id
+            saved_message = db.add_message(self.call_state.conversation_id, 'assistant', response)
+            
+            # Create note reference
+            if saved_message:
+                try:
+                    db.add_note_ref(saved_message.id, note_id, 0)
+                    logger.info(f"Created note reference: message={saved_message.id}, note={note_id}, index=0")
+                    
+                    # Fetch full message with refs for broadcasting
+                    full_message = db.get_message_with_refs(saved_message.id)
+                    if full_message:
+                        note_refs_data = full_message.get('note_refs', [])
+                except Exception as e:
+                    logger.error(f"Error creating note reference: {e}", exc_info=True)
+            
+            # Broadcast message with note reference
+            ws_manager.broadcast_message(
+                self.call_state.conversation_id, 'assistant', response, call_id,
+                note_refs=note_refs_data
+            )
 
         audio_data, error = tts_client.synthesize_sync(response, call_id)
         if audio_data and not error:

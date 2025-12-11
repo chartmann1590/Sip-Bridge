@@ -334,6 +334,17 @@ class MessageTomTomRef(Base):
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
+class MessageNoteRef(Base):
+    """Model for linking messages to notes."""
+    __tablename__ = 'message_note_refs'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    message_id = Column(Integer, nullable=False, index=True)
+    note_id = Column(Integer, nullable=False, index=True)
+    ref_index = Column(Integer, nullable=False)  # Position in message (0, 1, 2...)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
 class Note(Base):
     """Model for storing voice notes with AI-generated summaries."""
     __tablename__ = 'notes'
@@ -940,6 +951,23 @@ class Database:
                 session.add(ref)
                 session.commit()
 
+    def add_note_ref(self, message_id: int, note_id: int, ref_index: int) -> None:
+        """Link a message to a note."""
+        with self.get_session() as session:
+            # Check if reference already exists
+            existing = session.query(MessageNoteRef)\
+                .filter_by(message_id=message_id, ref_index=ref_index)\
+                .first()
+
+            if not existing:
+                ref = MessageNoteRef(
+                    message_id=message_id,
+                    note_id=note_id,
+                    ref_index=ref_index
+                )
+                session.add(ref)
+                session.commit()
+
     def get_message_with_refs(self, message_id: int) -> Optional[Dict[str, Any]]:
         """Get a message with all its calendar and email references populated."""
         with self.get_session() as session:
@@ -1007,12 +1035,28 @@ class Database:
                         'tomtom': tomtom.to_dict()
                     })
 
+            # Get note references
+            note_refs = []
+            note_refs_query = session.query(MessageNoteRef)\
+                .filter_by(message_id=message_id)\
+                .order_by(MessageNoteRef.ref_index)\
+                .all()
+
+            for ref in note_refs_query:
+                note = session.query(Note).filter_by(id=ref.note_id).first()
+                if note:
+                    note_refs.append({
+                        'ref_index': ref.ref_index,
+                        'note': note.to_dict()
+                    })
+
             # Build complete message dict
             result = message.to_dict()
             result['calendar_refs'] = calendar_refs
             result['email_refs'] = email_refs
             result['weather_refs'] = weather_refs
             result['tomtom_refs'] = tomtom_refs
+            result['note_refs'] = note_refs
 
             return result
 

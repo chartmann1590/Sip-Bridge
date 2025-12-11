@@ -20,6 +20,7 @@ export interface Message {
   email_refs?: any[];
   weather_refs?: any[];
   tomtom_refs?: any[];
+  note_refs?: any[];
 }
 
 export interface LogEntry {

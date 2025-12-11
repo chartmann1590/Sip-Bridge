@@ -57,6 +57,7 @@ class WebSocketManager:
                           email_refs: Optional[list] = None,
                           weather_refs: Optional[list] = None,
                           tomtom_refs: Optional[list] = None,
+                          note_refs: Optional[list] = None,
                           model: Optional[str] = None) -> None:
         """Broadcast a new message to all connected clients."""
         if self.socketio:
@@ -78,6 +79,8 @@ class WebSocketManager:
                 message_data['weather_refs'] = weather_refs
             if tomtom_refs:
                 message_data['tomtom_refs'] = tomtom_refs
+            if note_refs:
+                message_data['note_refs'] = note_refs
 
             self.socketio.emit('new_message', message_data)
     

@@ -17,10 +17,12 @@ import { CalendarCard } from './CalendarCard';
 import { EmailCard } from './EmailCard';
 import { WeatherCard } from './WeatherCard';
 import { TomTomCard } from './TomTomCard';
+import { NoteCard } from './NoteCard';
 import { EventModal } from './EventModal';
 import { EmailModal } from './EmailModal';
 import { WeatherModal } from './WeatherModal';
 import { TomTomModal } from './TomTomModal';
+import { NoteModal } from './NoteModal';
 import { Message as WSMessage } from '../hooks/useWebSocket';
 
 interface CalendarRef {
@@ -90,6 +92,19 @@ interface TomTomRef {
   };
 }
 
+interface NoteRef {
+  ref_index: number;
+  note: {
+    id: number;
+    title: string;
+    summary?: string | null;
+    transcript: string;
+    call_id?: string | null;
+    created_at: string;
+    updated_at: string;
+  };
+}
+
 interface Message {
   id?: number;
   conversation_id?: number;
@@ -101,6 +116,7 @@ interface Message {
   email_refs?: EmailRef[];
   weather_refs?: WeatherRef[];
   tomtom_refs?: TomTomRef[];
+  note_refs?: NoteRef[];
   model?: string;
 }
 
@@ -135,11 +151,12 @@ export function ConversationLog({ websocket }: ConversationLogProps) {
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const [timezone, setTimezoneState] = useState<string>('UTC');
 
-  // Modal state for calendar/email/weather/tomtom cards
+  // Modal state for calendar/email/weather/tomtom/note cards
   const [selectedEvent, setSelectedEvent] = useState<CalendarRef['event'] | null>(null);
   const [selectedEmail, setSelectedEmail] = useState<EmailRef['email'] | null>(null);
   const [selectedWeather, setSelectedWeather] = useState<WeatherRef['weather'] | null>(null);
   const [selectedTomTom, setSelectedTomTom] = useState<TomTomRef['tomtom'] | null>(null);
+  const [selectedNote, setSelectedNote] = useState<NoteRef['note'] | null>(null);
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
@@ -298,6 +315,7 @@ export function ConversationLog({ websocket }: ConversationLogProps) {
             email_refs: m.email_refs,
             weather_refs: m.weather_refs,
             tomtom_refs: m.tomtom_refs,
+            note_refs: m.note_refs,
           }));
 
         if (newMessages.length > 0) {
@@ -369,7 +387,8 @@ export function ConversationLog({ websocket }: ConversationLogProps) {
     calendarRefs: CalendarRef[] = [],
     emailRefs: EmailRef[] = [],
     weatherRefs: WeatherRef[] = [],
-    tomtomRefs: TomTomRef[] = []
+    tomtomRefs: TomTomRef[] = [],
+    noteRefs: NoteRef[] = []
   ): React.ReactNode[] {
     const attachments: React.ReactNode[] = [];
     
@@ -415,6 +434,18 @@ export function ConversationLog({ websocket }: ConversationLogProps) {
           key={`tomtom-${ref.ref_index}-${idx}`}
           tomtom={ref.tomtom}
           onClick={() => setSelectedTomTom(ref.tomtom)}
+        />
+      );
+    });
+    
+    // Render note cards
+    noteRefs.forEach((ref, idx) => {
+      attachments.push(
+        <NoteCard
+          key={`note-${ref.ref_index}-${idx}`}
+          note={ref.note}
+          timezone={timezone}
+          onClick={() => setSelectedNote(ref.note)}
         />
       );
     });
@@ -738,9 +769,9 @@ export function ConversationLog({ websocket }: ConversationLogProps) {
                       </div>
 
                       {/* Render attachments below the bubble */}
-                      {(msg.calendar_refs?.length || msg.email_refs?.length || msg.weather_refs?.length || msg.tomtom_refs?.length) ? (
+                      {(msg.calendar_refs?.length || msg.email_refs?.length || msg.weather_refs?.length || msg.tomtom_refs?.length || msg.note_refs?.length) ? (
                         <div className={`mt-2 flex flex-wrap gap-2 ${msg.role === 'assistant' ? 'justify-start' : 'justify-end'}`}>
-                          {renderAttachments(msg.calendar_refs, msg.email_refs, msg.weather_refs, msg.tomtom_refs)}
+                          {renderAttachments(msg.calendar_refs, msg.email_refs, msg.weather_refs, msg.tomtom_refs, msg.note_refs)}
                         </div>
                       ) : null}
 
@@ -757,7 +788,7 @@ export function ConversationLog({ websocket }: ConversationLogProps) {
         </div>
       </div>
 
-      {/* Modals for calendar events, emails, and weather */}
+      {/* Modals for calendar events, emails, weather, tomtom, and notes */}
       {selectedEvent && (
         <EventModal
           event={selectedEvent}
@@ -785,6 +816,46 @@ export function ConversationLog({ websocket }: ConversationLogProps) {
         <TomTomModal
           tomtom={selectedTomTom}
           onClose={() => setSelectedTomTom(null)}
+        />
+      )}
+
+      {selectedNote && (
+        <NoteModal
+          note={selectedNote}
+          onClose={() => setSelectedNote(null)}
+          onUpdate={async (id, title, summary, transcript) => {
+            try {
+              const response = await fetch(`/api/notes/${id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ title, summary, transcript }),
+              });
+              if (response.ok) {
+                // Refresh messages to get updated note
+                if (selectedConv) {
+                  fetchMessages(selectedConv.call_id);
+                }
+              }
+            } catch (error) {
+              console.error('Failed to update note:', error);
+            }
+          }}
+          onDelete={async (id) => {
+            try {
+              const response = await fetch(`/api/notes/${id}`, {
+                method: 'DELETE',
+              });
+              if (response.ok) {
+                setSelectedNote(null);
+                // Refresh messages to remove deleted note
+                if (selectedConv) {
+                  fetchMessages(selectedConv.call_id);
+                }
+              }
+            } catch (error) {
+              console.error('Failed to delete note:', error);
+            }
+          }}
         />
       )}
     </div>
