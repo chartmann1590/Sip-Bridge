@@ -334,6 +334,30 @@ class MessageTomTomRef(Base):
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
+class Note(Base):
+    """Model for storing voice notes with AI-generated summaries."""
+    __tablename__ = 'notes'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    title = Column(String(255), nullable=False)
+    summary = Column(Text, nullable=True)  # AI-generated summary
+    transcript = Column(Text, nullable=False)  # Full timestamped transcription
+    call_id = Column(String(100), nullable=True, index=True)  # Optional link to call
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            'id': self.id,
+            'title': self.title,
+            'summary': self.summary,
+            'transcript': self.transcript,
+            'call_id': self.call_id,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
 class Database:
     """Database manager for SIP AI Bridge."""
     
@@ -1040,6 +1064,81 @@ class Database:
                 'created_at': email.created_at.isoformat() if email.created_at else None,
                 'expires_at': email.expires_at.isoformat() if email.expires_at else None,
             }
+
+    # ==================
+    # Notes CRUD methods
+    # ==================
+
+    def create_note(self, title: str, transcript: str, summary: Optional[str] = None, call_id: Optional[str] = None) -> int:
+        """Create a new note."""
+        with self.Session() as session:
+            note = Note(
+                title=title,
+                summary=summary,
+                transcript=transcript,
+                call_id=call_id
+            )
+            session.add(note)
+            session.commit()
+            note_id = note.id
+            logger.info(f"Created note: {note_id} - {title}")
+
+            # Broadcast WebSocket event
+            ws_manager.broadcast_event('note_created', note.to_dict())
+
+            return note_id
+
+    def get_all_notes(self) -> List[Dict[str, Any]]:
+        """Get all notes ordered by creation date (newest first)."""
+        with self.Session() as session:
+            notes = session.query(Note).order_by(Note.created_at.desc()).all()
+            return [note.to_dict() for note in notes]
+
+    def get_note(self, note_id: int) -> Optional[Dict[str, Any]]:
+        """Get a note by ID."""
+        with self.Session() as session:
+            note = session.query(Note).filter_by(id=note_id).first()
+            return note.to_dict() if note else None
+
+    def update_note(self, note_id: int, title: Optional[str] = None,
+                   summary: Optional[str] = None, transcript: Optional[str] = None) -> bool:
+        """Update a note."""
+        with self.Session() as session:
+            note = session.query(Note).filter_by(id=note_id).first()
+            if not note:
+                return False
+
+            if title is not None:
+                note.title = title
+            if summary is not None:
+                note.summary = summary
+            if transcript is not None:
+                note.transcript = transcript
+
+            note.updated_at = datetime.now(timezone.utc)
+            session.commit()
+            logger.info(f"Updated note: {note_id}")
+
+            # Broadcast WebSocket event
+            ws_manager.broadcast_event('note_updated', note.to_dict())
+
+            return True
+
+    def delete_note(self, note_id: int) -> bool:
+        """Delete a note."""
+        with self.Session() as session:
+            note = session.query(Note).filter_by(id=note_id).first()
+            if not note:
+                return False
+
+            session.delete(note)
+            session.commit()
+            logger.info(f"Deleted note: {note_id}")
+
+            # Broadcast WebSocket event
+            ws_manager.broadcast_event('note_deleted', {'id': note_id})
+
+            return True
 
 
 # Global database instance

@@ -565,7 +565,12 @@ class CallSession:
         self.recording_file_path: Optional[str] = None
         self.wav_file: Optional[wave.Wave_write] = None
         self.wav_lock = threading.Lock()
-    
+
+        # Note-taking
+        self.note_taking = False  # Whether currently taking notes
+        self.note_transcripts = []  # List of (timestamp, text) tuples
+        self.note_start_time: Optional[float] = None  # When note-taking started
+
     def start(self) -> bool:
         """Start the call session."""
         try:
@@ -1190,6 +1195,28 @@ Only use markers for events/emails/weather/TomTom data explicitly listed above. 
             # Update last user speech time
             self.last_user_speech = time.time()
 
+            # Check for note-taking commands
+            text_lower = text.strip().lower()
+            if "start note" in text_lower or "begin note" in text_lower or "take note" in text_lower:
+                self._start_note_taking()
+                self.processing = False
+                return
+            elif "stop note" in text_lower or "end note" in text_lower or "finish note" in text_lower or "save note" in text_lower:
+                self._stop_note_taking()
+                self.processing = False
+                return
+
+            # If note-taking is active, record the transcript
+            if self.note_taking:
+                from datetime import datetime
+                timestamp = datetime.now().strftime("%I:%M:%S %p")
+                self.note_transcripts.append((timestamp, text))
+                logger.info(f"Added to note: [{timestamp}] {text}")
+
+                # Continue silently - no audio confirmation needed
+                self.processing = False
+                return
+
             # Save user message
             if self.call_state and self.call_state.conversation_id:
                 db.add_message(self.call_state.conversation_id, 'user', text)
@@ -1537,6 +1564,120 @@ Only use markers for events/emails/weather/TomTom data explicitly listed above. 
             # Debug: wav_file is None
             if hasattr(self, 'active') and self.active and hasattr(self, 'recording_file_path') and self.recording_file_path:
                  logger.warning("Attempted to write to recording but wav_file is None")
+
+    def _start_note_taking(self) -> None:
+        """Start note-taking mode."""
+        self.note_taking = True
+        self.note_start_time = time.time()
+        self.note_transcripts = []
+        logger.info("Started note-taking mode")
+
+        # Acknowledge to user
+        response = "I'm now taking notes. Speak your notes, and say 'stop notes' when you're done."
+        call_id = self.call_state.call_id if self.call_state else None
+
+        if self.call_state and self.call_state.conversation_id:
+            db.add_message(self.call_state.conversation_id, 'assistant', response)
+
+        # Play confirmation audio
+        audio_data, error = tts_client.synthesize_sync(response, call_id)
+        if audio_data and not error:
+            self._send_audio_rtp(audio_data)
+
+    def _stop_note_taking(self) -> None:
+        """Stop note-taking mode and generate AI summary."""
+        if not self.note_taking:
+            logger.warning("Attempted to stop note-taking but not in note-taking mode")
+            return
+
+        self.note_taking = False
+        call_id = self.call_state.call_id if self.call_state else None
+        logger.info(f"Stopped note-taking mode with {len(self.note_transcripts)} transcript entries")
+
+        if len(self.note_transcripts) == 0:
+            response = "Note-taking stopped, but no notes were recorded."
+            if self.call_state and self.call_state.conversation_id:
+                db.add_message(self.call_state.conversation_id, 'assistant', response)
+
+            audio_data, error = tts_client.synthesize_sync(response, call_id)
+            if audio_data and not error:
+                self._send_audio_rtp(audio_data)
+            return
+
+        # Format transcript with timestamps
+        transcript_lines = [f"[{timestamp}] {text}" for timestamp, text in self.note_transcripts]
+        full_transcript = "\n".join(transcript_lines)
+
+        # Generate title and summary using AI
+        logger.info("Generating AI title and summary for note")
+        title, summary = self._generate_note_title_and_summary(full_transcript)
+
+        # Save to database
+        note_id = db.create_note(
+            title=title,
+            transcript=full_transcript,
+            summary=summary,
+            call_id=call_id
+        )
+        logger.info(f"Created note {note_id}: {title}")
+
+        # Acknowledge to user
+        response = f"Note saved as '{title}'."
+        if self.call_state and self.call_state.conversation_id:
+            db.add_message(self.call_state.conversation_id, 'assistant', response)
+
+        audio_data, error = tts_client.synthesize_sync(response, call_id)
+        if audio_data and not error:
+            self._send_audio_rtp(audio_data)
+
+        # Reset note state
+        self.note_transcripts = []
+        self.note_start_time = None
+
+    def _generate_note_title_and_summary(self, transcript: str) -> tuple[str, str]:
+        """Generate AI title and summary for a note."""
+        from datetime import datetime
+
+        # Fallback title with timestamp
+        fallback_title = f"Notes - {datetime.now().strftime('%Y-%m-%d %I:%M %p')}"
+
+        try:
+            # Build prompt for AI to generate title and summary
+            prompt_messages = [
+                {
+                    'role': 'system',
+                    'content': 'You are a helpful assistant that creates concise titles and summaries for voice notes. Generate a title (max 60 characters) and a brief summary (2-3 sentences) of the key points.'
+                },
+                {
+                    'role': 'user',
+                    'content': f"Create a title and summary for these notes:\n\n{transcript}\n\nProvide your response in this exact format:\nTitle: [your title here]\nSummary: [your summary here]"
+                }
+            ]
+
+            call_id = self.call_state.call_id if self.call_state else None
+            response, error, _ = gpt_client.get_chat_response_sync(prompt_messages, call_id)
+
+            if error or not response:
+                logger.warning(f"Failed to generate AI title/summary: {error}")
+                return fallback_title, "Summary not available."
+
+            # Parse response
+            lines = response.strip().split('\n')
+            title = fallback_title
+            summary = "Summary not available."
+
+            for line in lines:
+                if line.startswith('Title:'):
+                    title = line.replace('Title:', '').strip()[:60]  # Max 60 chars
+                elif line.startswith('Summary:'):
+                    summary = line.replace('Summary:', '').strip()
+
+            logger.info(f"Generated title: {title}")
+            return title, summary
+
+        except Exception as e:
+            logger.error(f"Error generating note title/summary: {e}", exc_info=True)
+            return fallback_title, "Summary not available."
 
     def stop(self) -> None:
         """Stop the call session."""

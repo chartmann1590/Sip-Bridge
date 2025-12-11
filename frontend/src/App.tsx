@@ -2,11 +2,12 @@ import { useState, useEffect } from 'react';
 import { useWebSocket } from './hooks/useWebSocket';
 import { Dashboard } from './components/Dashboard';
 import { ConversationLog } from './components/ConversationLog';
+import { Notes } from './components/Notes';
 import { Settings } from './components/Settings';
-import { Phone, MessageSquare, Settings as SettingsIcon, Activity } from 'lucide-react';
+import { Phone, MessageSquare, Settings as SettingsIcon, Activity, FileText } from 'lucide-react';
 import { getCurrentTime, setTimezone } from './utils/timezone';
 
-type TabType = 'dashboard' | 'conversations' | 'settings';
+type TabType = 'dashboard' | 'conversations' | 'notes' | 'settings';
 
 function App() {
   const [activeTab, setActiveTab] = useState<TabType>('dashboard');
@@ -50,6 +51,7 @@ function App() {
   const tabs = [
     { id: 'dashboard' as TabType, label: 'Dashboard', icon: Activity },
     { id: 'conversations' as TabType, label: 'Conversations', icon: MessageSquare },
+    { id: 'notes' as TabType, label: 'Notes', icon: FileText },
     { id: 'settings' as TabType, label: 'Settings', icon: SettingsIcon },
   ];
   
@@ -128,6 +130,7 @@ function App() {
       <main className="flex-1 overflow-y-auto max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
         {activeTab === 'dashboard' && <Dashboard websocket={websocket} />}
         {activeTab === 'conversations' && <ConversationLog websocket={websocket} />}
+        {activeTab === 'notes' && <Notes />}
         {activeTab === 'settings' && <Settings />}
       </main>
       

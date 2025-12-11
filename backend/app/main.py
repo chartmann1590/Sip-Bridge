@@ -419,6 +419,78 @@ def get_email_message(email_id):
 
 
 # =====================
+# Notes API
+# =====================
+
+@app.route('/api/notes', methods=['GET'])
+def get_all_notes():
+    """Get all notes."""
+    notes = db.get_all_notes()
+    return jsonify({'notes': notes})
+
+
+@app.route('/api/notes/<int:note_id>', methods=['GET'])
+def get_note(note_id):
+    """Get a note by ID."""
+    note = db.get_note(note_id)
+    if not note:
+        return jsonify({'error': 'Note not found'}), 404
+    return jsonify(note)
+
+
+@app.route('/api/notes', methods=['POST'])
+def create_note():
+    """Create a new note."""
+    data = request.get_json()
+
+    if not data or 'title' not in data or 'transcript' not in data:
+        return jsonify({'error': 'Missing required fields: title, transcript'}), 400
+
+    note_id = db.create_note(
+        title=data['title'],
+        transcript=data['transcript'],
+        summary=data.get('summary'),
+        call_id=data.get('call_id')
+    )
+
+    note = db.get_note(note_id)
+    return jsonify(note), 201
+
+
+@app.route('/api/notes/<int:note_id>', methods=['PUT'])
+def update_note(note_id):
+    """Update a note."""
+    data = request.get_json()
+
+    if not data:
+        return jsonify({'error': 'No data provided'}), 400
+
+    success = db.update_note(
+        note_id=note_id,
+        title=data.get('title'),
+        summary=data.get('summary'),
+        transcript=data.get('transcript')
+    )
+
+    if not success:
+        return jsonify({'error': 'Note not found'}), 404
+
+    note = db.get_note(note_id)
+    return jsonify(note)
+
+
+@app.route('/api/notes/<int:note_id>', methods=['DELETE'])
+def delete_note(note_id):
+    """Delete a note."""
+    success = db.delete_note(note_id)
+
+    if not success:
+        return jsonify({'error': 'Note not found'}), 404
+
+    return jsonify({'success': True})
+
+
+# =====================
 # Logs API
 # =====================
 
