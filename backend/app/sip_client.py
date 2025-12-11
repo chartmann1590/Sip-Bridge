@@ -1209,7 +1209,10 @@ Only use markers for events/emails/weather/TomTom data explicitly listed above. 
             # If note-taking is active, record the transcript
             if self.note_taking:
                 from datetime import datetime
-                timestamp = datetime.now().strftime("%I:%M:%S %p")
+                import pytz
+                user_tz = pytz.timezone(Config.TIMEZONE)
+                current_time = datetime.now(user_tz)
+                timestamp = current_time.strftime("%I:%M:%S %p %Z")
                 self.note_transcripts.append((timestamp, text))
                 logger.info(f"Added to note: [{timestamp}] {text}")
 

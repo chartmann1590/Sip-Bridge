@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { FileText, Plus, Search, Clock, Trash2 } from 'lucide-react';
 import { NoteModal } from './NoteModal';
+import { formatDate } from '../utils/timezone';
 
 interface Note {
   id: number;
@@ -197,7 +198,7 @@ export function Notes() {
               <div className="flex items-center justify-between text-xs text-gray-500">
                 <div className="flex items-center gap-1">
                   <Clock className="w-3 h-3" />
-                  <span>{new Date(note.created_at).toLocaleDateString()}</span>
+                  <span>{formatDate(note.created_at)}</span>
                 </div>
                 <button
                   onClick={(e) => {

@@ -1084,7 +1084,7 @@ class Database:
             logger.info(f"Created note: {note_id} - {title}")
 
             # Broadcast WebSocket event
-            ws_manager.broadcast_event('note_created', note.to_dict())
+            ws_manager.broadcast_note_created(note.to_dict())
 
             return note_id
 
@@ -1120,7 +1120,7 @@ class Database:
             logger.info(f"Updated note: {note_id}")
 
             # Broadcast WebSocket event
-            ws_manager.broadcast_event('note_updated', note.to_dict())
+            ws_manager.broadcast_note_updated(note.to_dict())
 
             return True
 
@@ -1136,7 +1136,7 @@ class Database:
             logger.info(f"Deleted note: {note_id}")
 
             # Broadcast WebSocket event
-            ws_manager.broadcast_event('note_deleted', {'id': note_id})
+            ws_manager.broadcast_note_deleted(note_id)
 
             return True
 

@@ -131,6 +131,30 @@ class WebSocketManager:
                 'timestamp': datetime.utcnow().isoformat()
             })
 
+    def broadcast_note_created(self, note: Dict[str, Any]) -> None:
+        """Broadcast when a new note is created."""
+        if self.socketio:
+            self.socketio.emit('note_created', {
+                'note': note,
+                'timestamp': datetime.utcnow().isoformat()
+            })
+
+    def broadcast_note_updated(self, note: Dict[str, Any]) -> None:
+        """Broadcast when a note is updated."""
+        if self.socketio:
+            self.socketio.emit('note_updated', {
+                'note': note,
+                'timestamp': datetime.utcnow().isoformat()
+            })
+
+    def broadcast_note_deleted(self, note_id: int) -> None:
+        """Broadcast when a note is deleted."""
+        if self.socketio:
+            self.socketio.emit('note_deleted', {
+                'id': note_id,
+                'timestamp': datetime.utcnow().isoformat()
+            })
+
 
 # Global WebSocket manager instance
 ws_manager = WebSocketManager()

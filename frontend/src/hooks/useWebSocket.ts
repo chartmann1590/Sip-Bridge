@@ -120,6 +120,22 @@ export function useWebSocket() {
       console.log('Transcription:', data);
     });
 
+    // Note events - dispatch as custom window events
+    socket.on('note_created', (data: any) => {
+      console.log('Received note_created:', data);
+      window.dispatchEvent(new CustomEvent('note_created', { detail: data.note }));
+    });
+
+    socket.on('note_updated', (data: any) => {
+      console.log('Received note_updated:', data);
+      window.dispatchEvent(new CustomEvent('note_updated', { detail: data.note }));
+    });
+
+    socket.on('note_deleted', (data: any) => {
+      console.log('Received note_deleted:', data);
+      window.dispatchEvent(new CustomEvent('note_deleted', { detail: { id: data.id } }));
+    });
+
     return () => {
       socket.disconnect();
       delete (window as any).socket;

@@ -1,5 +1,6 @@
 import { X, Calendar, Edit2, Trash2, Save } from 'lucide-react';
 import { useState } from 'react';
+import { formatDateTime } from '../utils/timezone';
 
 interface Note {
   id: number;
@@ -62,7 +63,7 @@ export function NoteModal({ note, onClose, onUpdate, onDelete }: NoteModalProps)
               )}
               <div className="flex items-center gap-2 mt-2 text-sm text-gray-400">
                 <Calendar className="w-4 h-4" />
-                <span>{new Date(note.created_at).toLocaleString()}</span>
+                <span>{formatDateTime(note.created_at)}</span>
               </div>
             </div>
           </div>
@@ -155,7 +156,7 @@ export function NoteModal({ note, onClose, onUpdate, onDelete }: NoteModalProps)
 
           {/* Metadata */}
           <div className="text-xs text-gray-500 text-center pt-2 border-t border-white/10">
-            Last updated: {new Date(note.updated_at).toLocaleString()}
+            Last updated: {formatDateTime(note.updated_at)}
           </div>
         </div>
       </div>
