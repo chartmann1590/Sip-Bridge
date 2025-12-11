@@ -42,6 +42,8 @@ The SIP AI Bridge now supports email integration via IMAP, allowing the AI to ch
    - **IMAP Port**: 993 (default for SSL)
 5. Click **Save Changes**
 
+![Email Settings](screenshots/settings-email.png)
+
 #### Via Environment Variables:
 
 Add to your `.env` file:

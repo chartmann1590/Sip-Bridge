@@ -125,6 +125,70 @@ Once running, access the web dashboard at:
 - **Web UI**: http://localhost:3002
 - **API**: http://localhost:5001
 
+## Visual Guide
+
+### Dashboard
+
+The main dashboard provides real-time monitoring of all services and call activity:
+
+![Dashboard](docs/screenshots/dashboard-main.png)
+
+The dashboard shows:
+- Service health status for all integrated services
+- Current call status and controls
+- Recent call activity
+- AI integration services (Calendar, Email, Weather, TomTom)
+
+### Conversations
+
+Browse and review past conversations with pagination support:
+
+![Conversations](docs/screenshots/conversations-list.png)
+
+Features include:
+- Paginated conversation list (10 per page)
+- Search functionality
+- Real-time message updates during active calls
+- Export conversations to text files
+
+### Settings
+
+Configure all aspects of the SIP AI Bridge:
+
+![Settings Overview](docs/screenshots/settings-main.png)
+
+#### SIP Configuration
+
+![SIP Settings](docs/screenshots/settings-sip.png)
+
+Configure your SIP server connection, extension, and credentials.
+
+#### Calendar Integration
+
+![Calendar Settings](docs/screenshots/settings-calendar.png)
+
+Set up your iCalendar feed URL for calendar access during calls.
+
+#### Email Integration
+
+![Email Settings](docs/screenshots/settings-email.png)
+
+Configure IMAP settings for on-demand email checking during calls.
+
+#### Weather Integration
+
+![Weather Settings](docs/screenshots/settings-weather.png)
+
+Add your OpenWeatherMap API key for weather information.
+
+### Notes
+
+Manage notes and reminders:
+
+![Notes](docs/screenshots/notes-main.png)
+
+Create, edit, and organize notes that can be referenced during calls.
+
 ## Web Interface
 
 ### Dashboard

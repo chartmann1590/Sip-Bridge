@@ -4,6 +4,8 @@
 
 The home page dashboard has been completely redesigned to provide better visibility into call activity and system status.
 
+![Dashboard Overview](screenshots/dashboard-main.png)
+
 ## What Changed
 
 ### ✅ Added Features

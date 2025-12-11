@@ -15,7 +15,8 @@ import {
   Calendar,
   Mail,
   Cloud,
-  Map
+  Map,
+  FileText
 } from 'lucide-react';
 import { ServiceCard } from './StatusIndicator';
 import { formatTime, getCurrentTime, setTimezone } from '../utils/timezone';
@@ -82,6 +83,7 @@ export function Dashboard({ websocket }: DashboardProps) {
     email: false,
     weather: false,
     tomtom: false,
+    notes: false,
   });
   
   // Fetch timezone and service statuses from config
@@ -100,6 +102,7 @@ export function Dashboard({ websocket }: DashboardProps) {
           email: data.has_email_password ?? false,
           weather: data.has_weather_key ?? false,
           tomtom: data.has_tomtom_key ?? false,
+          notes: true, // Notes system is always available (no API key needed)
         });
       } catch (err) {
         console.error('Failed to fetch config:', err);
@@ -416,6 +419,26 @@ export function Dashboard({ websocket }: DashboardProps) {
             </div>
             <h4 className="font-semibold text-white mb-1 group-hover:text-red-300 transition-colors">TomTom Maps</h4>
             <p className="text-xs text-gray-400">Directions, traffic & POI</p>
+          </button>
+
+          <button
+            onClick={() => setSelectedServiceInfo({ ...serviceInfoMap.notes, status: serviceStatuses.notes })}
+            className="glass rounded-xl p-4 hover:bg-white/5 transition-all duration-200 text-left group"
+          >
+            <div className="flex items-start justify-between mb-3">
+              <div className={`p-2 rounded-lg ${serviceStatuses.notes ? 'bg-purple-500/20' : 'bg-gray-700'}`}>
+                <FileText className={`w-5 h-5 ${serviceStatuses.notes ? 'text-purple-400' : 'text-gray-500'}`} />
+              </div>
+              <div className={`px-2 py-1 rounded text-xs font-semibold ${
+                serviceStatuses.notes
+                  ? 'bg-green-500/20 text-green-300'
+                  : 'bg-gray-700 text-gray-400'
+              }`}>
+                {serviceStatuses.notes ? 'Active' : 'Inactive'}
+              </div>
+            </div>
+            <h4 className="font-semibold text-white mb-1 group-hover:text-purple-300 transition-colors">Notes</h4>
+            <p className="text-xs text-gray-400">Voice notes with AI summaries</p>
           </button>
         </div>
       </div>

@@ -82,6 +82,8 @@ The SIP client was not broadcasting call status updates via WebSocket at key mom
 
 ## Visual Indicators
 
+The call status is displayed prominently on the dashboard. See the [Dashboard screenshot](screenshots/dashboard-main.png) for the current call status card location.
+
 ### Dashboard Call Status Card
 
 **Idle State:**

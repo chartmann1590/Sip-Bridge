@@ -1,4 +1,4 @@
-import { X, Calendar, Mail, Cloud, Map, Info, Zap } from 'lucide-react';
+import { X, Calendar, Mail, Cloud, Map, Info, Zap, FileText } from 'lucide-react';
 
 interface ServiceInfo {
   name: string;
@@ -173,6 +173,23 @@ export const serviceInfoMap: Record<string, ServiceInfo> = {
       'What\'s the traffic like near downtown?',
       'Find nearby gas stations',
       'How long will it take to get to the airport?',
+    ],
+    status: false,
+  },
+  notes: {
+    name: 'Notes System',
+    icon: <FileText className="w-6 h-6 text-purple-400" />,
+    description: 'Capture voice notes during phone calls with AI-generated summaries and transcripts.',
+    howToTrigger: [
+      'Say \'start note\', \'begin note\', or \'take note\' during a call to start recording',
+      'Speak your notes - everything will be transcribed with timestamps',
+      'Say \'stop note\', \'end note\', \'finish note\', or \'save note\' to save the note',
+    ],
+    examples: [
+      'Start note',
+      'Take note',
+      'Stop note',
+      'Save note',
     ],
     status: false,
   },

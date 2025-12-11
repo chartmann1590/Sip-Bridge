@@ -4,6 +4,8 @@
 
 The Conversations page has been updated with pagination and improved scrolling behavior for better user experience.
 
+![Conversations List with Pagination](screenshots/conversations-list.png)
+
 ## What Changed
 
 ### ✅ Added Features

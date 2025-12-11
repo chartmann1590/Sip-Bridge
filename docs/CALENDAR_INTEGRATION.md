@@ -52,6 +52,8 @@ https://api.cupla.app/api/calendars/mine/cupla/calendar.ics?username=1817111a-b2
 4. Paste your iCalendar URL into the "Calendar URL (iCalendar/ICS)" field
 5. Click **Save Changes**
 
+![Calendar Settings](screenshots/settings-calendar.png)
+
 ### 3. Verify Integration
 
 After configuring your calendar URL, you can verify it's working:
