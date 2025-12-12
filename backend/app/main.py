@@ -152,14 +152,22 @@ def get_status():
 @app.route('/api/config', methods=['GET'])
 def get_config():
     """Get current configuration (excluding sensitive data)."""
-    # Get the base config
+    # Get the base config from class (env vars/defaults)
     config = Config.to_dict()
     
     # Override with any database-saved values to ensure we return the most up-to-date settings
+    # Database values ALWAYS take precedence over env vars/defaults
     saved_settings = db.get_all_settings()
     config_settings = {k.replace('config_', ''): v for k, v in saved_settings.items() if k.startswith('config_')}
     if config_settings:
+        # Update config dict with database values (these override env/defaults)
         config.update(config_settings)
+        # Also update the Config class in memory to keep it in sync
+        Config.update_from_dict(config_settings)
+        
+        # Log timezone specifically for debugging
+        if 'timezone' in config_settings:
+            logger.debug(f"Using timezone from database: {config_settings['timezone']} (overriding env/default: {os.getenv('TIMEZONE', 'UTC')})")
     
     return jsonify(config)
 
@@ -174,8 +182,11 @@ def update_config():
     Config.update_from_dict(data)
     
     # Save to database for persistence
+    # Database values will override env vars on next GET request and server restart
     for key, value in data.items():
         db.set_setting(f'config_{key}', value)
+        if key == 'timezone':
+            logger.info(f"Timezone saved to database: {value} (will override env var: {os.getenv('TIMEZONE', 'UTC')})")
     
     db.add_log('info', 'config_updated', f'Configuration updated: {list(data.keys())}')
     
@@ -728,10 +739,13 @@ def main():
     Config.ensure_data_dir()
     
     # Load saved settings from database
+    # Database values ALWAYS take precedence over environment variables
     saved_settings = db.get_all_settings()
     config_settings = {k.replace('config_', ''): v for k, v in saved_settings.items() if k.startswith('config_')}
     if config_settings:
+        # This will override any env var values with database values
         Config.update_from_dict(config_settings)
+        logger.info(f"Loaded {len(config_settings)} settings from database (overriding env vars)")
     
     db.add_log('info', 'server_starting', f'Starting SIP AI Bridge on port {Config.API_PORT}')
     
