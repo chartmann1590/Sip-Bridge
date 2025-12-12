@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { FileText, Plus, Search, Clock, Trash2 } from 'lucide-react';
 import { NoteModal } from './NoteModal';
-import { formatDate } from '../utils/timezone';
+import { formatDate, setTimezone } from '../utils/timezone';
 
 interface Note {
   id: number;
@@ -17,6 +17,23 @@ export function Notes() {
   const [notes, setNotes] = useState<Note[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedNote, setSelectedNote] = useState<Note | null>(null);
+  const [timezone, setTimezoneState] = useState<string>('UTC');
+
+  // Fetch timezone from config
+  useEffect(() => {
+    async function fetchTimezone() {
+      try {
+        const res = await fetch('/api/config');
+        const data = await res.json();
+        const tz = data.timezone || 'UTC';
+        setTimezoneState(tz);
+        setTimezone(tz);
+      } catch (err) {
+        console.error('Failed to fetch timezone:', err);
+      }
+    }
+    fetchTimezone();
+  }, []);
 
   useEffect(() => {
     fetchNotes();
@@ -198,7 +215,7 @@ export function Notes() {
               <div className="flex items-center justify-between text-xs text-gray-500">
                 <div className="flex items-center gap-1">
                   <Clock className="w-3 h-3" />
-                  <span>{formatDate(note.created_at)}</span>
+                  <span>{formatDate(note.created_at, timezone)}</span>
                 </div>
                 <button
                   onClick={(e) => {
@@ -222,6 +239,7 @@ export function Notes() {
       {selectedNote && (
         <NoteModal
           note={selectedNote}
+          timezone={timezone}
           onClose={() => setSelectedNote(null)}
           onUpdate={updateNote}
           onDelete={deleteNote}

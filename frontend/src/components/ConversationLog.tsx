@@ -827,6 +827,7 @@ export function ConversationLog({ websocket }: ConversationLogProps) {
             summary: selectedNote.summary ?? null,
             call_id: selectedNote.call_id ?? null,
           }}
+          timezone={timezone}
           onClose={() => setSelectedNote(null)}
           onUpdate={async (id, title, summary, transcript) => {
             try {

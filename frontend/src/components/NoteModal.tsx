@@ -14,12 +14,13 @@ interface Note {
 
 interface NoteModalProps {
   note: Note;
+  timezone: string;
   onClose: () => void;
   onUpdate: (id: number, title: string, summary: string, transcript: string) => void;
   onDelete: (id: number) => void;
 }
 
-export function NoteModal({ note, onClose, onUpdate, onDelete }: NoteModalProps) {
+export function NoteModal({ note, timezone, onClose, onUpdate, onDelete }: NoteModalProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editedTitle, setEditedTitle] = useState(note.title);
   const [editedSummary, setEditedSummary] = useState(note.summary || '');
@@ -63,7 +64,7 @@ export function NoteModal({ note, onClose, onUpdate, onDelete }: NoteModalProps)
               )}
               <div className="flex items-center gap-2 mt-2 text-sm text-gray-400">
                 <Calendar className="w-4 h-4" />
-                <span>{formatDateTime(note.created_at)}</span>
+                <span>{formatDateTime(note.created_at, timezone)}</span>
               </div>
             </div>
           </div>
@@ -156,7 +157,7 @@ export function NoteModal({ note, onClose, onUpdate, onDelete }: NoteModalProps)
 
           {/* Metadata */}
           <div className="text-xs text-gray-500 text-center pt-2 border-t border-white/10">
-            Last updated: {formatDateTime(note.updated_at)}
+            Last updated: {formatDateTime(note.updated_at, timezone)}
           </div>
         </div>
       </div>

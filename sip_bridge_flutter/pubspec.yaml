@@ -1,0 +1,77 @@
+name: sip_bridge_flutter
+description: Flutter mobile app for SIP AI Bridge
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  
+  # State management
+  provider: ^6.1.1
+  
+  # HTTP & WebSocket
+  http: ^1.1.0
+  web_socket_channel: ^2.4.0
+  
+  # Navigation
+  go_router: ^13.0.0
+  
+  # UI Components
+  flutter_svg: ^2.0.7
+  intl: ^0.18.1
+  
+  # Icons
+  lucide_icons: ^0.250.0
+  
+  # Audio
+  audioplayers: ^5.0.1
+  
+  # Storage
+  shared_preferences: ^2.2.2
+  
+  # Utilities
+  url_launcher: ^6.2.1
+  
+  # Theming
+  google_fonts: ^6.1.0
+  
+  # Error handling
+  dio: ^5.4.0
+  
+  # JSON serialization
+  json_annotation: ^4.8.1
+  
+  # Timezone handling
+  timezone: ^0.9.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  
+  # Code generation
+  build_runner: ^2.4.6
+  json_serializable: ^6.7.1
+  
+  # Linting
+  flutter_lints: ^3.0.1
+
+flutter:
+  uses-material-design: true
+  
+  assets:
+    - assets/images/
+    - assets/icons/
+  
+  fonts:
+    - family: Inter
+      fonts:
+        - asset: assets/fonts/Inter-Regular.ttf
+        - asset: assets/fonts/Inter-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/Inter-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/Inter-Bold.ttf
+          weight: 700
