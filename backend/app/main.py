@@ -152,7 +152,16 @@ def get_status():
 @app.route('/api/config', methods=['GET'])
 def get_config():
     """Get current configuration (excluding sensitive data)."""
-    return jsonify(Config.to_dict())
+    # Get the base config
+    config = Config.to_dict()
+    
+    # Override with any database-saved values to ensure we return the most up-to-date settings
+    saved_settings = db.get_all_settings()
+    config_settings = {k.replace('config_', ''): v for k, v in saved_settings.items() if k.startswith('config_')}
+    if config_settings:
+        config.update(config_settings)
+    
+    return jsonify(config)
 
 
 @app.route('/api/config', methods=['POST'])
