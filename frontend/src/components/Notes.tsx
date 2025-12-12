@@ -33,6 +33,13 @@ export function Notes() {
       }
     }
     fetchTimezone();
+    
+    // Refresh timezone periodically to pick up changes from Settings page
+    const interval = setInterval(() => {
+      fetchTimezone();
+    }, 5000); // Check every 5 seconds
+    
+    return () => clearInterval(interval);
   }, []);
 
   useEffect(() => {
