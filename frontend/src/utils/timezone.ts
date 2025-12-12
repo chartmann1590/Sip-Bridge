@@ -40,7 +40,8 @@ export function formatTime(timestamp: string, timezone?: string): string {
 export function formatDate(timestamp: string, timezone?: string): string {
   try {
     const tz = timezone || currentTimezone;
-    return new Date(timestamp).toLocaleDateString('en-US', {
+    // Use toLocaleString instead of toLocaleDateString to support time options
+    return new Date(timestamp).toLocaleString('en-US', {
       month: 'short',
       day: 'numeric',
       hour: '2-digit',

@@ -158,7 +158,11 @@ def get_config():
     # Override with any database-saved values to ensure we return the most up-to-date settings
     # Database values ALWAYS take precedence over env vars/defaults
     saved_settings = db.get_all_settings()
+    logger.info(f"DEBUG: All saved settings keys: {list(saved_settings.keys())}")
+    
     config_settings = {k.replace('config_', ''): v for k, v in saved_settings.items() if k.startswith('config_')}
+    logger.info(f"DEBUG: Config settings from DB: {config_settings}")
+    
     if config_settings:
         # Update config dict with database values (these override env/defaults)
         config.update(config_settings)
@@ -167,8 +171,13 @@ def get_config():
         
         # Log timezone specifically for debugging
         if 'timezone' in config_settings:
-            logger.debug(f"Using timezone from database: {config_settings['timezone']} (overriding env/default: {os.getenv('TIMEZONE', 'UTC')})")
+            logger.info(f"Using timezone from database: {config_settings['timezone']} (type: {type(config_settings['timezone'])}) (overriding env/default: {os.getenv('TIMEZONE', 'UTC')})")
+        else:
+            logger.warning(f"Timezone NOT found in database settings! Using Config.TIMEZONE: {config.get('timezone')}")
+    else:
+        logger.warning("No config settings found in database!")
     
+    logger.info(f"DEBUG: Final config timezone value: {config.get('timezone')} (type: {type(config.get('timezone'))})")
     return jsonify(config)
 
 
@@ -184,9 +193,13 @@ def update_config():
     # Save to database for persistence
     # Database values will override env vars on next GET request and server restart
     for key, value in data.items():
+        logger.info(f"DEBUG: Saving {key} = {value} (type: {type(value)}) to database as 'config_{key}'")
         db.set_setting(f'config_{key}', value)
+        # Verify it was saved
+        saved_value = db.get_setting(f'config_{key}')
+        logger.info(f"DEBUG: Verified saved value for {key}: {saved_value} (type: {type(saved_value)})")
         if key == 'timezone':
-            logger.info(f"Timezone saved to database: {value} (will override env var: {os.getenv('TIMEZONE', 'UTC')})")
+            logger.info(f"Timezone saved to database: {value} (verified: {saved_value}) (will override env var: {os.getenv('TIMEZONE', 'UTC')})")
     
     db.add_log('info', 'config_updated', f'Configuration updated: {list(data.keys())}')
     

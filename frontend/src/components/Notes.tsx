@@ -25,7 +25,10 @@ export function Notes() {
       try {
         const res = await fetch('/api/config');
         const data = await res.json();
+        console.log('DEBUG Notes: Full config response:', data);
+        console.log('DEBUG Notes: timezone value:', data.timezone, 'type:', typeof data.timezone);
         const tz = data.timezone || 'UTC';
+        console.log('DEBUG Notes: Using timezone:', tz);
         setTimezoneState(tz);
         setTimezone(tz);
       } catch (err) {
