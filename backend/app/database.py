@@ -358,14 +358,24 @@ class Note(Base):
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     def to_dict(self) -> Dict[str, Any]:
+        # Ensure timestamps are timezone-aware (UTC) before formatting
+        def format_timestamp(dt):
+            if dt is None:
+                return None
+            # If datetime is naive (no timezone), assume it's UTC
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            # Return ISO format with 'Z' suffix to ensure JavaScript interprets as UTC
+            return dt.isoformat().replace('+00:00', 'Z')
+        
         return {
             'id': self.id,
             'title': self.title,
             'summary': self.summary,
             'transcript': self.transcript,
             'call_id': self.call_id,
-            'created_at': self.created_at.isoformat() if self.created_at else None,
-            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+            'created_at': format_timestamp(self.created_at),
+            'updated_at': format_timestamp(self.updated_at),
         }
 
 

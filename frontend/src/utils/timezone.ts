@@ -40,15 +40,25 @@ export function formatTime(timestamp: string, timezone?: string): string {
 export function formatDate(timestamp: string, timezone?: string): string {
   try {
     const tz = timezone || currentTimezone;
-    // Use toLocaleString instead of toLocaleDateString to support time options
-    return new Date(timestamp).toLocaleString('en-US', {
+    // Ensure timestamp is treated as UTC if it doesn't have timezone info
+    let dateStr = timestamp;
+    if (!timestamp.includes('Z') && !timestamp.includes('+') && !timestamp.includes('-', 10)) {
+      // No timezone indicator, append Z to force UTC interpretation
+      dateStr = timestamp.endsWith('Z') ? timestamp : timestamp + 'Z';
+    }
+    const date = new Date(dateStr);
+    console.log(`formatDate: input="${timestamp}", normalized="${dateStr}", timezone="${tz}", parsed=${date.toISOString()}`);
+    const result = date.toLocaleString('en-US', {
       month: 'short',
       day: 'numeric',
       hour: '2-digit',
       minute: '2-digit',
       timeZone: tz
     });
-  } catch {
+    console.log(`formatDate: result="${result}"`);
+    return result;
+  } catch (error) {
+    console.error('formatDate error:', error, 'timestamp:', timestamp, 'timezone:', timezone);
     return timestamp;
   }
 }
@@ -59,7 +69,15 @@ export function formatDate(timestamp: string, timezone?: string): string {
 export function formatDateTime(timestamp: string, timezone?: string): string {
   try {
     const tz = timezone || currentTimezone;
-    return new Date(timestamp).toLocaleString('en-US', {
+    // Ensure timestamp is treated as UTC if it doesn't have timezone info
+    let dateStr = timestamp;
+    if (!timestamp.includes('Z') && !timestamp.includes('+') && !timestamp.includes('-', 10)) {
+      // No timezone indicator, append Z to force UTC interpretation
+      dateStr = timestamp.endsWith('Z') ? timestamp : timestamp + 'Z';
+    }
+    const date = new Date(dateStr);
+    console.log(`formatDateTime: input="${timestamp}", normalized="${dateStr}", timezone="${tz}", parsed=${date.toISOString()}`);
+    const result = date.toLocaleString('en-US', {
       month: 'short',
       day: 'numeric',
       year: 'numeric',
@@ -67,7 +85,10 @@ export function formatDateTime(timestamp: string, timezone?: string): string {
       minute: '2-digit',
       timeZone: tz
     });
-  } catch {
+    console.log(`formatDateTime: result="${result}"`);
+    return result;
+  } catch (error) {
+    console.error('formatDateTime error:', error, 'timestamp:', timestamp, 'timezone:', timezone);
     return timestamp;
   }
 }

@@ -25,10 +25,9 @@ export function Notes() {
       try {
         const res = await fetch('/api/config');
         const data = await res.json();
-        console.log('DEBUG Notes: Full config response:', data);
-        console.log('DEBUG Notes: timezone value:', data.timezone, 'type:', typeof data.timezone);
+        console.log('Notes: Received config:', data);
         const tz = data.timezone || 'UTC';
-        console.log('DEBUG Notes: Using timezone:', tz);
+        console.log('Notes: Setting timezone to:', tz);
         setTimezoneState(tz);
         setTimezone(tz);
       } catch (err) {
@@ -226,6 +225,7 @@ export function Notes() {
                 <div className="flex items-center gap-1">
                   <Clock className="w-3 h-3" />
                   <span>{formatDate(note.created_at, timezone)}</span>
+                  <span className="text-xs opacity-50">(tz: {timezone})</span>
                 </div>
                 <button
                   onClick={(e) => {
