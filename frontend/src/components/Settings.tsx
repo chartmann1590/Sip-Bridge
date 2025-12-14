@@ -35,6 +35,7 @@ interface Config {
   tts_api_key?: string;
   tts_voice: string;
   tts_fallback_voice?: string;
+  gtts_lang?: string;
   groq_api_key?: string;
   timezone?: string;
   bot_persona?: string;
@@ -65,6 +66,7 @@ export function Settings() {
     tts_url: '',
     tts_voice: 'en-US-GuyNeural',
     tts_fallback_voice: 'en-US-AndrewNeural',
+    gtts_lang: 'en',
     timezone: 'UTC',
   });
   const [voices, setVoices] = useState<string[]>([]);
@@ -77,9 +79,9 @@ export function Settings() {
   const [pullingModel, setPullingModel] = useState(false);
   const [newModelName, setNewModelName] = useState('');
   const [previewingVoice, setPreviewingVoice] = useState(false);
-  const [previewingFallbackVoice, setPreviewingFallbackVoice] = useState(false);
+  const [previewingGtts, setPreviewingGtts] = useState(false);
   const [audioElement, setAudioElement] = useState<HTMLAudioElement | null>(null);
-  const [fallbackAudioElement, setFallbackAudioElement] = useState<HTMLAudioElement | null>(null);
+  const [gttsAudioElement, setGttsAudioElement] = useState<HTMLAudioElement | null>(null);
   const [generatingPersona, setGeneratingPersona] = useState(false);
   
   useEffect(() => {
@@ -263,44 +265,44 @@ export function Settings() {
     }
   }
 
-  async function previewFallbackVoice() {
-    if (previewingFallbackVoice) {
+  async function previewGtts() {
+    if (previewingGtts) {
       // Stop current preview
-      if (fallbackAudioElement) {
-        fallbackAudioElement.pause();
-        fallbackAudioElement.src = '';
+      if (gttsAudioElement) {
+        gttsAudioElement.pause();
+        gttsAudioElement.src = '';
       }
-      setPreviewingFallbackVoice(false);
+      setPreviewingGtts(false);
       return;
     }
 
-    setPreviewingFallbackVoice(true);
+    setPreviewingGtts(true);
     setError(null);
 
     try {
-      const res = await fetch('/api/preview/voice', {
+      const res = await fetch('/api/preview/gtts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ voice: config.tts_fallback_voice || 'en-US-AndrewNeural' }),
+        body: JSON.stringify({ lang: config.gtts_lang || 'en' }),
       });
 
       if (!res.ok) {
-        throw new Error('Failed to preview fallback voice');
+        throw new Error('Failed to preview gTTS voice');
       }
 
       const audioBlob = await res.blob();
       const audioUrl = URL.createObjectURL(audioBlob);
 
       const audio = new Audio(audioUrl);
-      setFallbackAudioElement(audio);
+      setGttsAudioElement(audio);
 
       audio.onended = () => {
-        setPreviewingFallbackVoice(false);
+        setPreviewingGtts(false);
         URL.revokeObjectURL(audioUrl);
       };
 
       audio.onerror = () => {
-        setPreviewingFallbackVoice(false);
+        setPreviewingGtts(false);
         setError('Failed to play audio');
         URL.revokeObjectURL(audioUrl);
       };
@@ -308,7 +310,7 @@ export function Settings() {
       await audio.play();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
-      setPreviewingFallbackVoice(false);
+      setPreviewingGtts(false);
     }
   }
 
@@ -682,39 +684,59 @@ export function Settings() {
 
           <div>
             <label className="block text-sm font-medium text-gray-300 mb-2">
-              Fallback Voice
+              gTTS Fallback Language
             </label>
             <div className="flex gap-2">
               <select
-                value={config.tts_fallback_voice || 'en-US-AndrewNeural'}
-                onChange={(e) => handleChange('tts_fallback_voice', e.target.value)}
+                value={config.gtts_lang || 'en'}
+                onChange={(e) => handleChange('gtts_lang', e.target.value)}
                 className="flex-1 px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-gray-200 focus:outline-none focus:border-green-500"
               >
-                {voices.length > 0 ? (
-                  voices.map((voice) => (
-                    <option key={voice} value={voice}>
-                      {voice}
-                    </option>
-                  ))
-                ) : (
-                  <>
-                    <option value="en-US-AndrewNeural">en-US-AndrewNeural (Male)</option>
-                    <option value="en-US-GuyNeural">en-US-GuyNeural (Male)</option>
-                    <option value="en-US-JennyNeural">en-US-JennyNeural (Female)</option>
-                    <option value="en-US-AriaNeural">en-US-AriaNeural (Female)</option>
-                    <option value="en-US-DavisNeural">en-US-DavisNeural (Male)</option>
-                    <option value="en-GB-SoniaNeural">en-GB-SoniaNeural (Female, British)</option>
-                    <option value="en-GB-RyanNeural">en-GB-RyanNeural (Male, British)</option>
-                  </>
-                )}
+                <optgroup label="English">
+                  <option value="en">English (en)</option>
+                  <option value="en-us">English (US) (en-us)</option>
+                  <option value="en-gb">English (UK) (en-gb)</option>
+                  <option value="en-au">English (Australia) (en-au)</option>
+                  <option value="en-ca">English (Canada) (en-ca)</option>
+                </optgroup>
+                <optgroup label="Spanish">
+                  <option value="es">Spanish (es)</option>
+                  <option value="es-es">Spanish (Spain) (es-es)</option>
+                  <option value="es-us">Spanish (US) (es-us)</option>
+                  <option value="es-mx">Spanish (Mexico) (es-mx)</option>
+                </optgroup>
+                <optgroup label="French">
+                  <option value="fr">French (fr)</option>
+                  <option value="fr-fr">French (France) (fr-fr)</option>
+                  <option value="fr-ca">French (Canada) (fr-ca)</option>
+                </optgroup>
+                <optgroup label="German">
+                  <option value="de">German (de)</option>
+                  <option value="de-de">German (Germany) (de-de)</option>
+                </optgroup>
+                <optgroup label="Other Languages">
+                  <option value="it">Italian (it)</option>
+                  <option value="pt">Portuguese (pt)</option>
+                  <option value="pt-br">Portuguese (Brazil) (pt-br)</option>
+                  <option value="ru">Russian (ru)</option>
+                  <option value="ja">Japanese (ja)</option>
+                  <option value="ko">Korean (ko)</option>
+                  <option value="zh">Chinese (zh)</option>
+                  <option value="zh-cn">Chinese (Simplified) (zh-cn)</option>
+                  <option value="zh-tw">Chinese (Traditional) (zh-tw)</option>
+                  <option value="nl">Dutch (nl)</option>
+                  <option value="pl">Polish (pl)</option>
+                  <option value="ar">Arabic (ar)</option>
+                  <option value="hi">Hindi (hi)</option>
+                </optgroup>
               </select>
               <button
-                onClick={previewFallbackVoice}
-                disabled={previewingFallbackVoice}
+                onClick={previewGtts}
+                disabled={previewingGtts}
                 className="px-4 py-2 rounded-lg bg-amber-500 hover:bg-amber-600 text-white font-medium transition-colors disabled:opacity-50 flex items-center gap-2 whitespace-nowrap"
-                title="Preview fallback voice"
+                title="Preview gTTS voice"
               >
-                {previewingFallbackVoice ? (
+                {previewingGtts ? (
                   <RefreshCw className="w-4 h-4 animate-spin" />
                 ) : (
                   <Play className="w-4 h-4" />
@@ -723,7 +745,7 @@ export function Settings() {
               </button>
             </div>
             <p className="text-xs text-gray-500 mt-1">
-              Fallback voice used when the primary voice fails. Click Preview to hear how this voice sounds.
+              gTTS (Google Text-to-Speech) is used as a fallback when edge-tts fails. Click Preview to hear how this voice sounds.
             </p>
           </div>
         </div>

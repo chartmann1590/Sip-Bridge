@@ -596,6 +596,37 @@ def preview_voice():
     return Response(audio, mimetype='audio/mpeg')
 
 
+@app.route('/api/preview/gtts', methods=['POST'])
+def preview_gtts():
+    """Preview a gTTS voice with specified language."""
+    data = request.get_json()
+    if not data or 'lang' not in data:
+        return jsonify({'error': 'No language provided'}), 400
+
+    lang = data['lang']
+    preview_text = "Hello! This is a preview of how I sound. I hope you like my voice!"
+
+    # Use gTTS directly for preview
+    try:
+        from gtts import gTTS
+        import io
+        
+        tts = gTTS(text=preview_text, lang=lang, slow=False)
+        audio_buffer = io.BytesIO()
+        tts.write_to_fp(audio_buffer)
+        audio_buffer.seek(0)
+        audio_data = audio_buffer.read()
+        
+        if not audio_data:
+            return jsonify({'error': 'Failed to generate audio'}), 500
+        
+        from flask import Response
+        return Response(audio_data, mimetype='audio/mpeg')
+    except Exception as e:
+        logger.error(f"gTTS preview failed: {e}", exc_info=True)
+        return jsonify({'error': f'gTTS preview failed: {str(e)}'}), 500
+
+
 @app.route('/api/generate/persona', methods=['POST'])
 def generate_persona():
     """Generate an enhanced bot persona using AI."""

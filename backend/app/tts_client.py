@@ -119,20 +119,27 @@ class TTSClient:
 
         return voices
 
-    async def _synthesize_gtts(self, text: str, call_id: Optional[str] = None) -> Tuple[Optional[bytes], Optional[str]]:
+    async def _synthesize_gtts(self, text: str, call_id: Optional[str] = None, lang: Optional[str] = None) -> Tuple[Optional[bytes], Optional[str]]:
         """
         Ultimate fallback using Google TTS (gTTS).
         Returns MP3 audio data.
+        
+        Args:
+            text: The text to synthesize
+            call_id: Optional call ID for logging
+            lang: Optional language code (defaults to configured GTTS_LANG)
         """
         if not GTTS_AVAILABLE:
             return None, "gTTS not available"
 
         try:
-            logger.info(f"Using gTTS fallback for: {text[:50]}...")
-            db.add_log('info', 'tts_gtts_fallback', f'Using Google TTS fallback: {text[:100]}...', call_id)
+            # Use configured language or provided override
+            gtts_lang = lang or getattr(Config, 'GTTS_LANG', 'en')
+            logger.info(f"Using gTTS fallback (lang={gtts_lang}) for: {text[:50]}...")
+            db.add_log('info', 'tts_gtts_fallback', f'Using Google TTS fallback (lang={gtts_lang}): {text[:100]}...', call_id)
 
             # Create gTTS object
-            tts = gTTS(text=text, lang='en', slow=False)
+            tts = gTTS(text=text, lang=gtts_lang, slow=False)
 
             # Save to BytesIO buffer
             audio_buffer = io.BytesIO()
@@ -291,8 +298,9 @@ class TTSClient:
             logger.error(error)
             return None, error
         
-        # Attempt gTTS fallback
-        gtts_result = await self._synthesize_gtts(text, call_id)
+        # Attempt gTTS fallback with configured language
+        gtts_lang = getattr(Config, 'GTTS_LANG', 'en')
+        gtts_result = await self._synthesize_gtts(text, call_id, lang=gtts_lang)
         if gtts_result[0] is not None and len(gtts_result[0]) > 0:
             logger.info(f"gTTS fallback SUCCESS: Generated {len(gtts_result[0])} bytes of audio")
             db.add_log('info', 'tts_gtts_success', 
