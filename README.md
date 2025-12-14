@@ -13,6 +13,8 @@ A Docker-based SIP voice bridge that connects VoIP calls to AI services for inte
 - **Calendar Integration**: Access and query your calendar events during calls
 - **Email Integration**: Check your inbox on-demand during calls via IMAP
 - **Weather Integration**: Get current weather and forecasts for any location via OpenWeatherMap
+- **TomTom Integration**: Get directions, traffic updates, and find points of interest via TomTom Maps API
+- **Voice Notes**: Capture timestamped voice notes during calls with AI-generated summaries
 - **Conversation History**: Browse and export past conversations
 - **Real-time Updates**: WebSocket-based live updates during calls
 
@@ -99,6 +101,10 @@ EMAIL_IMAP_PORT=993
 # Weather Integration (optional, OpenWeatherMap)
 # For weather information during calls
 OPENWEATHER_API_KEY=your_openweather_api_key_here
+
+# TomTom Integration (optional)
+# For directions, traffic, and POI searches
+TOMTOM_API_KEY=your_tomtom_api_key_here
 
 # Bot Persona (optional)
 # Customize the AI's personality and response style
@@ -228,6 +234,23 @@ Create, edit, and organize notes that can be referenced during calls.
 - Supports multiple temperature units (Fahrenheit, Celsius, Kelvin)
 - Natural voice-formatted weather responses
 
+### TomTom Maps
+
+- Get driving directions between locations
+- Check traffic incidents and delays
+- Search for points of interest (restaurants, gas stations, etc.)
+- Automatic detection when users ask for directions or traffic info
+- See [TomTom Integration Guide](docs/TOMTOM_INTEGRATION.md) for details
+
+### Notes
+
+- Capture voice notes during phone calls
+- Timestamped transcriptions of everything you say
+- AI-generated summaries for quick reference
+- View and manage notes in the web interface
+- Notes are linked to the call where they were created
+- See [Notes Feature Guide](docs/NOTES_FEATURE.md) for details
+
 ### Settings
 
 - SIP server configuration
@@ -238,55 +261,54 @@ Create, edit, and organize notes that can be referenced during calls.
 - Calendar URL configuration
 - Email IMAP settings
 - Weather API key configuration
+- TomTom API key configuration
 - Bot persona customization
 
 ## API Endpoints
 
-### Health & Status
+For complete API documentation, see the [API Reference](docs/API_REFERENCE.md).
 
+### Quick Reference
+
+**Health & Status:**
 - `GET /api/health` - Health check for all services
 - `GET /api/status` - Current bridge status
 
-### Configuration
-
+**Configuration:**
 - `GET /api/config` - Get current configuration
 - `POST /api/config` - Update configuration
 - `GET /api/voices` - List available TTS voices
 
-### Conversations
-
+**Conversations:**
 - `GET /api/conversations` - List conversations (supports pagination)
 - `GET /api/conversations/:call_id` - Get specific conversation
 - `GET /api/messages` - Get recent messages
 
-### Calendar
+**Calendar:**
+- `GET /api/calendar/test` - Test calendar connection
+- `GET /api/calendar/events` - Get upcoming events
 
-- `GET /api/calendar/test` - Test calendar connection and fetch events
-- `GET /api/calendar/events` - Get upcoming calendar events
+**Email:**
+- `GET /api/email/test` - Test email connection
+- `GET /api/email/unread` - Get unread emails
 
-### Email
+**Notes:**
+- `GET /api/notes` - Get all notes
+- `POST /api/notes` - Create a note
+- `PUT /api/notes/:note_id` - Update a note
+- `DELETE /api/notes/:note_id` - Delete a note
 
-- `GET /api/email/test` - Test email connection and fetch unread emails
-- `GET /api/email/unread` - Get unread emails (query param: `limit`)
-
-### Weather
-
-Weather functionality is automatically integrated into the AI conversation flow. When users ask about weather, the system:
-- Detects weather-related keywords in speech
-- Extracts location from the query
-- Fetches current weather from OpenWeatherMap
-- Injects weather context into AI responses
-
-### SIP Control
-
+**SIP Control:**
 - `POST /api/sip/restart` - Restart SIP client
 - `POST /api/sip/hangup` - Hang up current call
 
-### Testing
+**Testing:**
+- `POST /api/test/transcribe` - Test transcription
+- `POST /api/test/ollama` - Test LLM
+- `POST /api/test/tts` - Test TTS
 
-- `POST /api/test/transcribe` - Test transcription with audio file
-- `POST /api/test/ollama` - Test Ollama with text
-- `POST /api/test/tts` - Test TTS synthesis
+**WebSocket Events:**
+The API also supports real-time updates via WebSocket. See [API Reference](docs/API_REFERENCE.md#websocket-events) for details.
 
 ## Development
 
@@ -317,13 +339,14 @@ Sip-Bridge/
 ├── backend/              # Python Flask backend
 │   ├── app/
 │   │   ├── main.py      # Flask app and API endpoints
-│   │   ├── sip_client.py # SIP client (PJSUA2)
+│   │   ├── sip_client.py # SIP client (socket-based)
 │   │   ├── gpt_client.py # Ollama/Groq LLM client
 │   │   ├── transcription.py # Groq Whisper transcription
 │   │   ├── tts_client.py # Text-to-speech client
 │   │   ├── calendar_client.py # Calendar integration
 │   │   ├── email_client.py # Email IMAP integration
 │   │   ├── weather_client.py # Weather integration (OpenWeatherMap)
+│   │   ├── tomtom_client.py # TomTom Maps integration
 │   │   ├── database.py  # SQLite database models
 │   │   ├── websocket.py  # WebSocket manager
 │   │   └── config.py    # Configuration management
@@ -399,15 +422,30 @@ OpenWeatherMap API integration:
 - Multiple temperature units (imperial, metric, standard)
 - Weather data is automatically injected into AI context when users ask about weather
 
+### TomTom Maps Services
+
+TomTom Maps API integration:
+- Website: https://developer.tomtom.com/
+- Free tier available with API key
+- Automatic detection for directions, traffic, and POI queries
+- Supports address geocoding and coordinate-based searches
+- Real-time traffic incident data
+- Point of interest search with categories
+- See [TomTom Integration Guide](docs/TOMTOM_INTEGRATION.md) for details
+
 ## Documentation
 
 Additional detailed documentation is available in the `docs/` directory:
 
+### Integration Guides
 - [Calendar Integration Guide](docs/CALENDAR_INTEGRATION.md) - Setup and usage for calendar features
 - [Email Integration Guide](docs/EMAIL_INTEGRATION.md) - IMAP email setup and configuration
-- [Dashboard Updates](docs/DASHBOARD_UPDATES.md) - Recent UI improvements
-- [Conversation Pagination](docs/CONVERSATION_PAGINATION_UPDATE.md) - Pagination features
-- [Call Status Fix](docs/CALL_STATUS_FIX.md) - Status handling improvements
+- [TomTom Integration Guide](docs/TOMTOM_INTEGRATION.md) - Directions, traffic, and POI search setup
+- [Notes Feature Guide](docs/NOTES_FEATURE.md) - Voice note-taking during calls
+
+### Reference Documentation
+- [API Reference](docs/API_REFERENCE.md) - Complete API endpoint documentation
+- [Changelog](docs/CHANGELOG.md) - Recent changes and improvements
 
 ## Troubleshooting
 
@@ -467,6 +505,15 @@ Additional detailed documentation is available in the `docs/` directory:
 4. Check Docker logs for weather API errors: `docker-compose logs | grep weather`
 5. Weather is automatically triggered when users ask about weather - no manual API calls needed
 6. Get a free API key at https://openweathermap.org/api
+
+### TomTom Not Working
+
+1. Verify TomTom API key is configured in Settings
+2. Check that the API key is valid and has available quota
+3. Ensure location names are spelled correctly for directions and POI searches
+4. Check Docker logs for TomTom API errors: `docker-compose logs | grep tomtom`
+5. TomTom is automatically triggered when users ask for directions, traffic, or POI searches
+6. Get a free API key at https://developer.tomtom.com/
 
 ### Web Interface Not Loading
 
