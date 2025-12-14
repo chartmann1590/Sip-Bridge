@@ -1,4 +1,4 @@
-"""TTS client using edge-tts (Microsoft Edge TTS) - completely free, no API key required."""
+"""TTS client using edge-tts (Microsoft Edge TTS) with gTTS fallback - completely free, no API key required."""
 import io
 import asyncio
 from typing import Optional, Tuple
@@ -13,9 +13,18 @@ from .websocket import ws_manager
 
 logger = logging.getLogger(__name__)
 
+# Import gTTS for fallback
+try:
+    from gtts import gTTS
+    GTTS_AVAILABLE = True
+    logger.info("gTTS fallback TTS is available")
+except ImportError:
+    GTTS_AVAILABLE = False
+    logger.warning("gTTS not available - final fallback TTS will not work")
+
 
 class TTSClient:
-    """Client for Microsoft Edge TTS using edge-tts library."""
+    """Client for Microsoft Edge TTS with gTTS fallback."""
 
     def __init__(self):
         # Edge TTS is completely free and requires no API key
@@ -67,10 +76,89 @@ class TTSClient:
             return 'en-US-AriaNeural'  # Natural female voice
         return voice
 
+    def _get_fallback_voices(self, primary_voice: str) -> list:
+        """
+        Get a list of fallback voices similar to the primary voice.
+        Maintains same gender and style characteristics.
+        Uses configured TTS_FALLBACK_VOICE if available.
+        """
+        # Start with primary voice
+        voices = [primary_voice]
+
+        # Add configured fallback voice if different from primary
+        fallback_voice = getattr(Config, 'TTS_FALLBACK_VOICE', None)
+        if fallback_voice and fallback_voice != primary_voice:
+            voices.append(fallback_voice)
+
+        # Map primary voices to additional similar fallbacks
+        fallback_map = {
+            # Male voices - professional/natural alternatives
+            'en-US-GuyNeural': ['en-US-AndrewNeural', 'en-US-BrianNeural', 'en-US-DavisNeural', 'en-US-ChristopherNeural'],
+            'en-US-AndrewNeural': ['en-US-GuyNeural', 'en-US-BrianNeural', 'en-US-DavisNeural'],
+            'en-US-BrianNeural': ['en-US-AndrewNeural', 'en-US-GuyNeural', 'en-US-DavisNeural'],
+            # Female voices - natural alternatives
+            'en-US-AriaNeural': ['en-US-JennyNeural', 'en-US-EmmaNeural', 'en-US-MichelleNeural'],
+            'en-US-JennyNeural': ['en-US-AriaNeural', 'en-US-EmmaNeural', 'en-US-MichelleNeural'],
+        }
+
+        # Add mapped fallbacks (avoid duplicates)
+        if primary_voice in fallback_map:
+            for v in fallback_map[primary_voice]:
+                if v not in voices:
+                    voices.append(v)
+
+        # Add generic fallbacks based on gender detection (avoid duplicates)
+        if 'Male' in primary_voice or 'Guy' in primary_voice or 'Andrew' in primary_voice or 'Brian' in primary_voice:
+            for v in ['en-US-AndrewNeural', 'en-US-BrianNeural', 'en-US-GuyNeural']:
+                if v not in voices:
+                    voices.append(v)
+        else:
+            for v in ['en-US-JennyNeural', 'en-US-AriaNeural']:
+                if v not in voices:
+                    voices.append(v)
+
+        return voices
+
+    async def _synthesize_gtts(self, text: str, call_id: Optional[str] = None) -> Tuple[Optional[bytes], Optional[str]]:
+        """
+        Ultimate fallback using Google TTS (gTTS).
+        Returns MP3 audio data.
+        """
+        if not GTTS_AVAILABLE:
+            return None, "gTTS not available"
+
+        try:
+            logger.info(f"Using gTTS fallback for: {text[:50]}...")
+            db.add_log('info', 'tts_gtts_fallback', f'Using Google TTS fallback: {text[:100]}...', call_id)
+
+            # Create gTTS object
+            tts = gTTS(text=text, lang='en', slow=False)
+
+            # Save to BytesIO buffer
+            audio_buffer = io.BytesIO()
+            tts.write_to_fp(audio_buffer)
+            audio_buffer.seek(0)
+            audio_data = audio_buffer.read()
+
+            if audio_data:
+                logger.info(f"gTTS SUCCESS: Generated {len(audio_data)} bytes")
+                db.add_log('info', 'tts_success', f'Generated {len(audio_data)} bytes with gTTS fallback', call_id)
+                return audio_data, None
+            else:
+                error = "gTTS returned no audio data"
+                logger.error(error)
+                return None, error
+
+        except Exception as e:
+            error = f"gTTS fallback failed: {str(e)}"
+            logger.error(error, exc_info=True)
+            db.add_log('error', 'tts_gtts_failed', error, call_id)
+            return None, error
+
     async def synthesize(self, text: str, call_id: Optional[str] = None,
                         voice: Optional[str] = None) -> Tuple[Optional[bytes], Optional[str]]:
         """
-        Synthesize text to speech using Microsoft Edge TTS.
+        Synthesize text to speech using Microsoft Edge TTS with automatic fallback to gTTS.
 
         Args:
             text: The text to synthesize
@@ -83,56 +171,139 @@ class TTSClient:
         if not text:
             return None, "Empty input text"
 
-        voice_to_use = voice or self.voice
+        primary_voice = voice or self.voice
+        fallback_voices = self._get_fallback_voices(primary_voice)
 
-        # Try up to 3 times with different strategies
-        for attempt in range(3):
-            try:
-                db.add_log('info', 'tts_request', f'Synthesizing with {voice_to_use} (attempt {attempt + 1}): {text[:100]}...', call_id)
-                logger.info(f"TTS synthesize attempt {attempt + 1} for: {text[:50]}...")
+        logger.info(f"TTS synthesize with fallback chain: {fallback_voices}")
 
-                # Create communicate object
-                communicate = edge_tts.Communicate(text, voice_to_use)
+        # Try each voice in the fallback chain
+        last_error = None
+        for voice_idx, voice_to_use in enumerate(fallback_voices):
+            # Try each voice up to 2 times before moving to next fallback
+            max_attempts = 2 if voice_idx < len(fallback_voices) - 1 else 3
 
-                # Collect audio data
-                audio_data = b''
-                async for chunk in communicate.stream():
-                    if chunk["type"] == "audio":
-                        audio_data += chunk["data"]
+            for attempt in range(max_attempts):
+                try:
+                    is_fallback = voice_to_use != primary_voice
+                    fallback_note = " (FALLBACK)" if is_fallback else ""
 
-                if audio_data:
-                    db.add_log('info', 'tts_success', f'Generated {len(audio_data)} bytes of audio', call_id)
-                    logger.info(f"TTS success: Generated {len(audio_data)} bytes")
-                    return audio_data, None
-                else:
-                    logger.warning(f"No audio data generated on attempt {attempt + 1}")
-                    if attempt < 2:
-                        await asyncio.sleep(1)  # Wait before retry
+                    db.add_log('info', 'tts_request',
+                              f'Synthesizing with {voice_to_use}{fallback_note} (attempt {attempt + 1}/{max_attempts}): {text[:100]}...',
+                              call_id)
+                    logger.info(f"TTS attempt {attempt + 1}/{max_attempts} with voice {voice_to_use}{fallback_note}: {text[:50]}...")
+
+                    # Create communicate object
+                    communicate = edge_tts.Communicate(text, voice_to_use)
+
+                    # Collect audio data with WAV header handling
+                    audio_data = b''
+                    chunk_count = 0
+                    empty_chunks = 0
+                    async for chunk in communicate.stream():
+                        if chunk["type"] == "audio":
+                            chunk_data = chunk["data"]
+                            chunk_count += 1
+                            
+                            # Skip empty chunks
+                            if not chunk_data or len(chunk_data) == 0:
+                                empty_chunks += 1
+                                logger.debug(f"Empty chunk {chunk_count} received from {voice_to_use}")
+                                continue
+                            
+                            # Check for and strip WAV headers (44 bytes starting with "RIFF")
+                            if chunk_data.startswith(b"RIFF") and len(chunk_data) > 44:
+                                # This chunk has a WAV header, strip it
+                                audio_data += chunk_data[44:]
+                                logger.debug(f"Stripped WAV header from chunk {chunk_count} (was {len(chunk_data)} bytes, now {len(chunk_data) - 44} bytes)")
+                            else:
+                                # No WAV header or too small, use as-is
+                                audio_data += chunk_data
+
+                    # Validate audio data
+                    if audio_data and len(audio_data) > 44:  # Must be more than just a WAV header
+                        success_msg = f'Generated {len(audio_data)} bytes of audio with voice {voice_to_use}{fallback_note}'
+                        if empty_chunks > 0:
+                            logger.warning(f"Skipped {empty_chunks} empty chunks from {voice_to_use}")
+                        db.add_log('info', 'tts_success', success_msg, call_id)
+                        logger.info(f"TTS SUCCESS: {success_msg}")
+                        if is_fallback:
+                            logger.warning(f"Using fallback voice {voice_to_use} instead of {primary_voice}")
+                        return audio_data, None
+                    elif audio_data and len(audio_data) <= 44:
+                        # Only WAV header or very small data
+                        logger.warning(f"Audio data from {voice_to_use} is too small ({len(audio_data)} bytes), likely only header")
+                        if attempt < max_attempts - 1:
+                            await asyncio.sleep(0.5)
+                            continue
+                    else:
+                        logger.warning(f"No audio data generated with {voice_to_use} on attempt {attempt + 1} (processed {chunk_count} chunks, {empty_chunks} empty)")
+                        if attempt < max_attempts - 1:
+                            await asyncio.sleep(0.5)  # Brief wait before retry
+                            continue
+
+                except Exception as e:
+                    error_msg = str(e)
+                    last_error = error_msg
+                    
+                    # Detect specific error types
+                    is_rate_limit = '403' in error_msg or 'rate limit' in error_msg.lower() or 'too many requests' in error_msg.lower()
+                    is_unauthorized = '401' in error_msg or 'unauthorized' in error_msg.lower()
+                    is_network_error = 'connection' in error_msg.lower() or 'network' in error_msg.lower() or 'timeout' in error_msg.lower()
+                    
+                    error_type = "unknown"
+                    if is_rate_limit:
+                        error_type = "rate_limit"
+                    elif is_unauthorized:
+                        error_type = "unauthorized"
+                    elif is_network_error:
+                        error_type = "network"
+                    
+                    logger.error(f"TTS attempt {attempt + 1}/{max_attempts} with {voice_to_use} failed ({error_type}): {error_msg}", exc_info=True)
+                    db.add_log('error', 'tts_attempt_failed', 
+                              f'Attempt {attempt + 1}/{max_attempts} with {voice_to_use} failed ({error_type}): {error_msg[:100]}', 
+                              call_id)
+
+                    # If not the last attempt for this voice, retry with appropriate delay
+                    if attempt < max_attempts - 1:
+                        # Use longer delay for rate limit errors (3-5 seconds)
+                        if is_rate_limit:
+                            delay = 3.0 + (attempt * 0.5)  # 3s, 3.5s, 4s...
+                            logger.info(f"Rate limit detected, waiting {delay:.1f}s before retry...")
+                            await asyncio.sleep(delay)
+                        else:
+                            # Shorter delay for other errors
+                            await asyncio.sleep(0.5)
                         continue
 
-                    error = "No audio data generated after retries"
-                    db.add_log('error', 'tts_failed', error, call_id)
-                    return None, error
+            # If we get here, all attempts with this voice failed, try next fallback
+            logger.warning(f"All attempts with voice {voice_to_use} failed, trying next fallback...")
 
-            except Exception as e:
-                error_msg = str(e)
-                logger.error(f"TTS attempt {attempt + 1} failed: {error_msg}", exc_info=True)
+        # All edge-tts voices failed, try gTTS as ultimate fallback
+        logger.warning("All edge-tts voices failed, attempting gTTS fallback...")
+        db.add_log('warning', 'tts_edge_failed', 
+                   f'All edge-tts voices failed. Last error: {last_error}. Attempting gTTS fallback...', 
+                   call_id)
+        
+        # Check if gTTS is available before attempting
+        if not GTTS_AVAILABLE:
+            error = f"TTS error: All edge-tts voices failed and gTTS is not available. Last edge-tts error: {last_error}"
+            db.add_log('error', 'tts_failed', error, call_id)
+            logger.error(error)
+            return None, error
+        
+        # Attempt gTTS fallback
+        gtts_result = await self._synthesize_gtts(text, call_id)
+        if gtts_result[0] is not None and len(gtts_result[0]) > 0:
+            logger.info(f"gTTS fallback SUCCESS: Generated {len(gtts_result[0])} bytes of audio")
+            db.add_log('info', 'tts_gtts_success', 
+                       f'gTTS fallback succeeded: Generated {len(gtts_result[0])} bytes', 
+                       call_id)
+            return gtts_result
 
-                # If this is a 403 or connection error and we have more attempts, try again
-                if attempt < 2 and ('403' in error_msg or 'Invalid response status' in error_msg):
-                    logger.info(f"Retrying TTS after error (attempt {attempt + 1}/3)")
-                    await asyncio.sleep(2)  # Wait longer before retry
-                    continue
-
-                # On final attempt, return the error
-                if attempt == 2:
-                    error = f"TTS error after 3 attempts: {error_msg}"
-                    db.add_log('error', 'tts_failed', error, call_id)
-                    return None, error
-
-        # Should not reach here, but just in case
-        error = "TTS failed: exceeded retry attempts"
+        # Everything failed
+        error = f"TTS error: All fallback voices and gTTS failed. Last edge-tts error: {last_error}, gTTS error: {gtts_result[1] if gtts_result else 'gTTS not available'}"
         db.add_log('error', 'tts_failed', error, call_id)
+        logger.error(error)
         return None, error
 
     def synthesize_sync(self, text: str, call_id: Optional[str] = None,
@@ -248,21 +419,25 @@ class TTSClient:
             ]
 
     def check_health(self) -> bool:
-        """Check if edge-tts is available (always true since it's a local library)."""
+        """Check if TTS is available (either edge-tts or gTTS)."""
         try:
-            # edge-tts is a local library, so it's always available if imported
+            # Check edge-tts
             import edge_tts
-            # Also check if our event loop is running
-            is_healthy = self._loop is not None and not self._loop.is_closed() and not self._initialization_failed
+            edge_tts_healthy = self._loop is not None and not self._loop.is_closed() and not self._initialization_failed
+
+            # Consider healthy if either edge-tts OR gTTS is available
+            is_healthy = edge_tts_healthy or GTTS_AVAILABLE
+
             if not is_healthy:
-                logger.warning(f"TTS health check failed: loop={self._loop is not None}, closed={self._loop.is_closed() if self._loop else 'N/A'}, init_failed={self._initialization_failed}")
+                logger.warning(f"TTS health check failed: edge-tts_healthy={edge_tts_healthy}, gtts_available={GTTS_AVAILABLE}")
             return is_healthy
         except ImportError:
-            logger.error("edge-tts module not available!")
-            return False
+            # If edge-tts not available, check if gTTS is
+            logger.warning("edge-tts module not available!")
+            return GTTS_AVAILABLE
 
 
 # Global TTS client instance
 logger.info("Initializing global TTS client...")
 tts_client = TTSClient()
-logger.info(f"TTS client initialized: healthy={tts_client.check_health()}")
+logger.info(f"TTS client initialized: healthy={tts_client.check_health()}, gTTS_available={GTTS_AVAILABLE}")

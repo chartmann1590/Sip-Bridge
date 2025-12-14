@@ -34,6 +34,7 @@ class Config:
     TTS_URL: str = os.getenv('TTS_URL', 'http://10.0.0.59:5050')
     TTS_API_KEY: str = os.getenv('TTS_API_KEY', '')
     TTS_VOICE: str = os.getenv('TTS_VOICE', 'en-US-GuyNeural')
+    TTS_FALLBACK_VOICE: str = os.getenv('TTS_FALLBACK_VOICE', 'en-US-AndrewNeural')
     
     # Web Interface
     WEB_PORT: int = int(os.getenv('WEB_PORT', '3002'))
@@ -87,6 +88,7 @@ class Config:
             'tts_url': cls.TTS_URL,
             'tts_api_key': cls.TTS_API_KEY,
             'tts_voice': cls.TTS_VOICE,
+            'tts_fallback_voice': cls.TTS_FALLBACK_VOICE,
             'groq_api_key': cls.GROQ_API_KEY,
             'timezone': cls.TIMEZONE,
             'bot_persona': cls.BOT_PERSONA,
@@ -128,6 +130,8 @@ class Config:
             cls.TTS_API_KEY = data['tts_api_key']
         if 'tts_voice' in data:
             cls.TTS_VOICE = data['tts_voice']
+        if 'tts_fallback_voice' in data:
+            cls.TTS_FALLBACK_VOICE = data['tts_fallback_voice']
         if 'groq_api_key' in data:
             cls.GROQ_API_KEY = data['groq_api_key']
         if 'timezone' in data:

@@ -14,7 +14,7 @@ dependencies:
   
   # HTTP & WebSocket
   http: ^1.1.0
-  web_socket_channel: ^2.4.0
+  socket_io_client: ^2.0.0
   
   # Navigation
   go_router: ^13.0.0
@@ -60,18 +60,3 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
-  
-  assets:
-    - assets/images/
-    - assets/icons/
-  
-  fonts:
-    - family: Inter
-      fonts:
-        - asset: assets/fonts/Inter-Regular.ttf
-        - asset: assets/fonts/Inter-Medium.ttf
-          weight: 500
-        - asset: assets/fonts/Inter-SemiBold.ttf
-          weight: 600
-        - asset: assets/fonts/Inter-Bold.ttf
-          weight: 700

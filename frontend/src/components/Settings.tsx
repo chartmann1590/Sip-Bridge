@@ -34,6 +34,7 @@ interface Config {
   tts_url: string;
   tts_api_key?: string;
   tts_voice: string;
+  tts_fallback_voice?: string;
   groq_api_key?: string;
   timezone?: string;
   bot_persona?: string;
@@ -63,6 +64,7 @@ export function Settings() {
     ollama_model: 'llama3.1',
     tts_url: '',
     tts_voice: 'en-US-GuyNeural',
+    tts_fallback_voice: 'en-US-AndrewNeural',
     timezone: 'UTC',
   });
   const [voices, setVoices] = useState<string[]>([]);
@@ -75,7 +77,9 @@ export function Settings() {
   const [pullingModel, setPullingModel] = useState(false);
   const [newModelName, setNewModelName] = useState('');
   const [previewingVoice, setPreviewingVoice] = useState(false);
+  const [previewingFallbackVoice, setPreviewingFallbackVoice] = useState(false);
   const [audioElement, setAudioElement] = useState<HTMLAudioElement | null>(null);
+  const [fallbackAudioElement, setFallbackAudioElement] = useState<HTMLAudioElement | null>(null);
   const [generatingPersona, setGeneratingPersona] = useState(false);
   
   useEffect(() => {
@@ -256,6 +260,55 @@ export function Settings() {
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
       setPreviewingVoice(false);
+    }
+  }
+
+  async function previewFallbackVoice() {
+    if (previewingFallbackVoice) {
+      // Stop current preview
+      if (fallbackAudioElement) {
+        fallbackAudioElement.pause();
+        fallbackAudioElement.src = '';
+      }
+      setPreviewingFallbackVoice(false);
+      return;
+    }
+
+    setPreviewingFallbackVoice(true);
+    setError(null);
+
+    try {
+      const res = await fetch('/api/preview/voice', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ voice: config.tts_fallback_voice || 'en-US-AndrewNeural' }),
+      });
+
+      if (!res.ok) {
+        throw new Error('Failed to preview fallback voice');
+      }
+
+      const audioBlob = await res.blob();
+      const audioUrl = URL.createObjectURL(audioBlob);
+
+      const audio = new Audio(audioUrl);
+      setFallbackAudioElement(audio);
+
+      audio.onended = () => {
+        setPreviewingFallbackVoice(false);
+        URL.revokeObjectURL(audioUrl);
+      };
+
+      audio.onerror = () => {
+        setPreviewingFallbackVoice(false);
+        setError('Failed to play audio');
+        URL.revokeObjectURL(audioUrl);
+      };
+
+      await audio.play();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unknown error');
+      setPreviewingFallbackVoice(false);
     }
   }
 
@@ -624,6 +677,53 @@ export function Settings() {
             </div>
             <p className="text-xs text-gray-500 mt-1">
               Click Preview to hear how this voice sounds
+            </p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-300 mb-2">
+              Fallback Voice
+            </label>
+            <div className="flex gap-2">
+              <select
+                value={config.tts_fallback_voice || 'en-US-AndrewNeural'}
+                onChange={(e) => handleChange('tts_fallback_voice', e.target.value)}
+                className="flex-1 px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-gray-200 focus:outline-none focus:border-green-500"
+              >
+                {voices.length > 0 ? (
+                  voices.map((voice) => (
+                    <option key={voice} value={voice}>
+                      {voice}
+                    </option>
+                  ))
+                ) : (
+                  <>
+                    <option value="en-US-AndrewNeural">en-US-AndrewNeural (Male)</option>
+                    <option value="en-US-GuyNeural">en-US-GuyNeural (Male)</option>
+                    <option value="en-US-JennyNeural">en-US-JennyNeural (Female)</option>
+                    <option value="en-US-AriaNeural">en-US-AriaNeural (Female)</option>
+                    <option value="en-US-DavisNeural">en-US-DavisNeural (Male)</option>
+                    <option value="en-GB-SoniaNeural">en-GB-SoniaNeural (Female, British)</option>
+                    <option value="en-GB-RyanNeural">en-GB-RyanNeural (Male, British)</option>
+                  </>
+                )}
+              </select>
+              <button
+                onClick={previewFallbackVoice}
+                disabled={previewingFallbackVoice}
+                className="px-4 py-2 rounded-lg bg-amber-500 hover:bg-amber-600 text-white font-medium transition-colors disabled:opacity-50 flex items-center gap-2 whitespace-nowrap"
+                title="Preview fallback voice"
+              >
+                {previewingFallbackVoice ? (
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Play className="w-4 h-4" />
+                )}
+                Preview
+              </button>
+            </div>
+            <p className="text-xs text-gray-500 mt-1">
+              Fallback voice used when the primary voice fails. Click Preview to hear how this voice sounds.
             </p>
           </div>
         </div>
