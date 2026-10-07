@@ -14,7 +14,7 @@ SQLAlchemy==2.0.23
 dnspython>=2.4.0
 
 # HTTP client
-requests==2.31.0
+requests==2.33.0
 aiohttp==3.14.3
 httpx==0.25.2
 
