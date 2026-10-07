@@ -28,7 +28,7 @@ gTTS>=2.5.0
 # Audio processing (audioop is built into Python 3.11)
 
 # Environment and config
-python-dotenv==1.0.0
+python-dotenv==1.2.2
 
 # Async support
 asyncio-mqtt==0.16.2
